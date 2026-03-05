@@ -13,3 +13,7 @@ Roadmap:
  3) Lightweight text editor
  4) Search function for file system
  5) Fork
+
+Interests/Goals that need more research:
+ 1) Compiler
+ 2) Program execution (like a compiled C program rather than a script)
