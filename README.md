@@ -6,13 +6,13 @@ Current functionality:
  - Basic terminal with curser
  - Processes/scheduling
  - File system
+ - Scripts/execution (for terminal commands)
 
 Roadmap:
- 1) Scripts/execution (for terminal commands)
- 2) Priority Scheduling/Multi-level Queue
- 3) Lightweight text editor
- 4) Search function for file system
- 5) Fork
+ 1) Priority Scheduling/Multi-level Queue
+ 2) Lightweight text editor
+ 3) Search function for file system
+ 4) Fork
 
 Interests/Goals that need more research:
  1) Compiler
