@@ -4,6 +4,7 @@
 typedef enum {
 	KEY_NONE = 0,
 	KEY_CHAR,
+	KEY_ESC,
 	KEY_ENTER,
 	KEY_BACKSPACE,
 	KEY_LEFT,

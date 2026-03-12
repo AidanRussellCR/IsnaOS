@@ -5,6 +5,7 @@
 #include "drivers/vga.h"
 #include "drivers/keyboard.h"
 #include "kernel/sched.h"
+#include "kernel/scribe.h"
 #include "kernel/task.h"
 #include "lib/str.h"
 #include "ui/overlays.h"
@@ -361,6 +362,17 @@ static void shell_execute_command(const char* buf, int from_script, int depth) {
 			if (vfs_is_dirty()) vfs_save();
 			shutdown_machine();
 		}
+	} else if (streq(buf, "formatfs")) {
+		terminal_write("Format filesystem? This will permanently erase all files. (y/n): ");
+		char yn = read_yes_no();
+		if (yn == 'y') {
+			vfs_init();
+			vfs_status_t st = vfs_save();
+			if (st == VFS_OK) terminal_write("Filesystem formatted.\n");
+			else vfs_print_status(st);
+		} else {
+			terminal_write("Canceled.\n");
+		}
 	} else if (streq(buf, "help")) {
 		terminal_write("Commands:\n");
 		terminal_write("  help                    - show this help\n");
@@ -373,9 +385,11 @@ static void shell_execute_command(const char* buf, int from_script, int depth) {
 		terminal_write("  sync                    - save filesystem to disk\n");
 		terminal_write("  exit                    - save and shut down\n");
 		terminal_write("  shop                    - list files/directories here\n");
+		terminal_write("  formatfs                - format the filesystem\n");
 		terminal_write("  fab <file>              - create file\n");
 		terminal_write("  insp <file>             - read file contents\n");
 		terminal_write("  carve <text> :: <file>  - write text to file\n");
+		terminal_write("  scribe <file>           - open text editor\n");
 		terminal_write("  burn <file>             - delete file\n");
 		terminal_write("  newdir <dir>            - create directory\n");
 		terminal_write("  cd <dir>                - change directory\n");
@@ -474,6 +488,8 @@ static void shell_execute_command(const char* buf, int from_script, int depth) {
 			}
       		}
       		if (vfs_is_dirty()) vfs_save();
+      	} else if (starts_with(buf, "scribe ")) {
+		scribe_open(buf + 7);
       	} else if (starts_with(buf, "burn ")) {
       		terminal_write("Burn file '");
       		terminal_write(buf + 5);

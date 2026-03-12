@@ -7,7 +7,12 @@
 
 #define VFS_LBA_BASE 2048u
 #define VFS_MAGIC 0x50534631u
-#define VFS_VERSION 2u
+
+#define VFS_VERSION_MAJOR 2u
+#define VFS_VERSION_MINOR 0u
+
+#define VFS_COMPAT_FLAGS 0u
+#define VFS_INCOMPAT_FLAGS 0u
 
 typedef enum { NODE_DIR = 1, NODE_FILE = 2 } node_type_t;
 
@@ -253,12 +258,19 @@ vfs_status_t vfs_burn(const char* filename) {
 
 typedef struct __attribute__((packed)) {
 	uint32_t magic;
-	uint16_t version;
-	uint16_t reserved;
+
+	uint16_t version_major;		// incompatible changes
+	uint16_t version_minor;		// backward-compatible changes
+
+	uint32_t header_size;		// sizeof(vfs_superblock_t)
+	uint32_t node_size;		// sizeof(vfs_disk_node_t)
+
+	uint32_t compat_flags;		// optional features older code might ignore
+	uint32_t incompat_flags;	// incompatible features older code must reject
+
 	uint32_t node_count;
 	uint32_t data_bytes;
 	uint32_t root_index;
-	uint32_t cwd_index;
 	uint32_t total_sectors;
 	uint32_t checksum;
 } vfs_superblock_t;
@@ -319,20 +331,26 @@ vfs_status_t vfs_save(void) {
 	uint32_t total_sectors = 1u + node_table_sectors + data_sectors;
 
 	int root_index = find_index(nodes, node_count, g_root);
-	int cwd_index  = find_index(nodes, node_count, g_cwd);
-
 	if (root_index < 0) root_index = 0;
-	if (cwd_index < 0) cwd_index = 0;
 
 	vfs_superblock_t sb;
 	kmemset(&sb, 0, sizeof(sb));
 	sb.magic = VFS_MAGIC;
-	sb.version = (uint16_t)VFS_VERSION;
+	
+	sb.version_major = (uint16_t)VFS_VERSION_MAJOR;
+	sb.version_minor = (uint16_t)VFS_VERSION_MINOR;
+
+	sb.header_size = (uint32_t)sizeof(vfs_superblock_t);
+	sb.node_size   = (uint32_t)sizeof(vfs_disk_node_t);
+
+	sb.compat_flags   = VFS_COMPAT_FLAGS;
+	sb.incompat_flags = VFS_INCOMPAT_FLAGS;
+
 	sb.node_count = (uint32_t)node_count;
 	sb.data_bytes = data_bytes;
 	sb.root_index = (uint32_t)root_index;
-	sb.cwd_index = (uint32_t)cwd_index;
 	sb.total_sectors = total_sectors;
+	sb.checksum = 0;
 
 	uint8_t sector[ATA_SECTOR_SIZE];
 	kmemset(sector, 0, ATA_SECTOR_SIZE);
@@ -445,7 +463,20 @@ vfs_status_t vfs_load(void) {
 	kmemset(&sb, 0, sizeof(sb));
 	for (size_t i = 0; i < sizeof(sb); i++) ((uint8_t*)&sb)[i] = sector[i];
 
-	if (sb.magic != VFS_MAGIC || sb.version != VFS_VERSION) return VFS_ERR_NOT_FOUND;
+	if (sb.magic != VFS_MAGIC) return VFS_ERR_NOT_FOUND;
+
+	// reject incompatible major version
+	if (sb.version_major != VFS_VERSION_MAJOR) {
+		return VFS_ERR_BUSY;
+	}
+
+	// reject if on-disk node/header sizes do not match current build
+	if (sb.header_size != sizeof(vfs_superblock_t)) return VFS_ERR_BUSY;
+	if (sb.node_size   != sizeof(vfs_disk_node_t))  return VFS_ERR_BUSY;
+
+	// reject incompatible or unsupported features
+	if ((sb.incompat_flags & ~VFS_INCOMPAT_FLAGS) != 0) return VFS_ERR_BUSY;
+	
 	if (sb.node_count == 0 || sb.node_count > 1024) return VFS_ERR_NOT_FOUND;
 
 	uint32_t node_table_bytes = sb.node_count * (uint32_t)sizeof(vfs_disk_node_t);

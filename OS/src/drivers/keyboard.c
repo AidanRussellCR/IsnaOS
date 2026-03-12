@@ -60,6 +60,11 @@ int keyboard_try_get_key(key_event_t* ev) {
 
 	char c = shift_down ? scancode_to_ascii_shift[code] : scancode_to_ascii[code];
 	if (!c) return 0;
+	
+	if (code == 0x01) {
+		ev->type = KEY_ESC;
+		return 1;
+	}
 
 	if (c == '\n') { ev->type = KEY_ENTER; return 1; }
 	if (c == '\b') { ev->type = KEY_BACKSPACE; return 1; }

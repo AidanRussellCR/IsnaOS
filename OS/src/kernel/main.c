@@ -21,8 +21,14 @@ void kmain(void) {
 
 	heap_init();
 	vfs_init();
-	if (vfs_load() != VFS_OK) {
+
+	vfs_status_t st = vfs_load();
+	if (st == VFS_ERR_NOT_FOUND) {
+		// no fs present, make fresh one
 		vfs_save();
+	} else if (st != VFS_OK) {
+		terminal_write("Filesystem mount failed.\n");
+		terminal_write("Run formatfs to create a new filesystem.\n");
 	}
 
 	task_init();
