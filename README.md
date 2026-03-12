@@ -7,12 +7,16 @@ Current functionality:
  - Processes/scheduling
  - File system
  - Scripts/execution (for terminal commands)
+ - Text editor (Scribe)
+
+Short Term Goals:
+ - Fix bugs with scribe display
+ - Make scribe usage more intuitive for user
 
 Roadmap:
  1) Priority Scheduling/Multi-level Queue
- 2) Lightweight text editor
- 3) Search function for file system
- 4) Fork
+ 2) Search function for file system
+ 3) Fork
 
 Interests/Goals that need more research:
  1) Compiler
