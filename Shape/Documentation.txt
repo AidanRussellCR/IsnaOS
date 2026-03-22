@@ -1,0 +1,65 @@
+Currently, the Shape v1.0 Assembler is very limited in scope.
+
+
+Sections:
+
+.code
+.data
+
+
+Labels:
+
+ - A label ends with :
+
+entry:
+string1:
+string2:
+
+
+Instructions:
+
+ret
+ - Return call within the program (not much use yet)
+
+yield
+ - Calls the host API yield function
+
+exit
+ - Calls the host API exit function (terminates program)
+
+speak <label>
+ - Prints a null-terminated string stored in .data at the given label
+
+
+Data:
+
+asciz "string"
+ - Stores a null-terminated string
+ - Supports  \n  \t  \\  and  \"
+
+
+Comments:
+
+ - Comments start with ;
+; a comment looks like this
+
+
+Requirements:
+
+ - Code must contain an entry label (entry:) within .code
+ - speak must refer to a .data label
+
+
+
+
+Building and Summoning a Golem:
+
+shape hello.asm hello
+summon hello.glm
+
+ - The shape command builds a golem executable from the shape assembly code
+ - The summon command runs the executable golem
+
+
+
+Examples of valid golems are shown in the examples folder
