@@ -1,5 +1,6 @@
 #pragma once
 #include <stddef.h>
+#include <stdint.h>
 
 typedef void (*vfs_list_cb_t)(const char* name, int is_dir, void* user);
 
@@ -28,6 +29,10 @@ vfs_status_t vfs_fab(const char* filename);
 vfs_status_t vfs_insp(const char* filename, const char** out_text);
 vfs_status_t vfs_carve(const char* filename, const char* text);
 
+// new vers for binary
+vfs_status_t vfs_insp_bytes(const char* filename, const uint8_t** out_data, size_t* out_size);
+vfs_status_t vfs_carve_bytes(const char* filename, const uint8_t* data, size_t size);
+
 vfs_status_t vfs_burn(const char* filename);
 vfs_status_t vfs_load(void);
 vfs_status_t vfs_save(void);
@@ -40,5 +45,4 @@ int vfs_is_dirty(void);
 
 // Scripts
 typedef void (*vfs_spell_cb_t)(const char* name, void* user);
-
 void vfs_grimoire(vfs_spell_cb_t cb, void* user);

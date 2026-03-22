@@ -13,6 +13,11 @@
 #define SCRIBE_CMD_ROW (TERM_HEIGHT - 1)
 #define SCRIBE_TEXT_ROWS (TERM_HEIGHT - 2)
 
+#define SCRIBE_GUTTER_WIDTH 5
+#define SCRIBE_TEXT_COL0 SCRIBE_GUTTER_WIDTH
+#define SCRIBE_TEXT_WIDTH (TEXT_WIDTH - SCRIBE_GUTTER_WIDTH)
+#define SCRIBE_GUTTER_COLOR 0x70 // black text white background
+
 typedef enum {
 	SCRIBE_MODE_WRITE = 0,
 	SCRIBE_MODE_COMMAND
@@ -128,10 +133,10 @@ static void scribe_draw_status(scribe_t* ed) {
 	terminal_write_at(SCRIBE_STATUS_ROW, 0,
 		(ed->mode == SCRIBE_MODE_WRITE) ? "[WRITE] " : "[COMMAND] ");
 
-	terminal_write_at(SCRIBE_STATUS_ROW, 8, ed->filename);
+	terminal_write_at(SCRIBE_STATUS_ROW, 10, ed->filename);
 
 	if (ed->modified) {
-		terminal_write_at(SCRIBE_STATUS_ROW, 8 + kstrlen(ed->filename) + 1, "*");
+		terminal_write_at(SCRIBE_STATUS_ROW, 10 + kstrlen(ed->filename) + 1, "*");
 	}
 
 	char info[40];
@@ -139,7 +144,6 @@ static void scribe_draw_status(scribe_t* ed) {
 	size_t col = ed->cur_col + 1;
 
 	int p = 0;
-	info[p++] = ' ';
 	info[p++] = 'L';
 	info[p++] = 'n';
 	info[p++] = ' ';
@@ -170,12 +174,46 @@ static void scribe_draw_status(scribe_t* ed) {
 	}
 	info[p] = '\0';
 
-	terminal_write_at(SCRIBE_STATUS_ROW, 40, info);
+	terminal_write_at(SCRIBE_STATUS_ROW, 32, info);
+
+	if (ed->message[0]) {
+		terminal_write_at(SCRIBE_STATUS_ROW, 48, ed->message);
+	}
 }
 
 static void scribe_draw_command(scribe_t* ed) {
 	terminal_clear_row(SCRIBE_CMD_ROW);
-	terminal_write_at(SCRIBE_CMD_ROW, 0, ed->message);
+
+	if (ed->mode == SCRIBE_MODE_WRITE) {
+		terminal_write_at(SCRIBE_CMD_ROW, 0,
+			"Esc=COMMAND  Arrows=Move  Tab=Indent  Enter=Split  Backspace/Delete=Edit");
+	} else {
+		terminal_write_at(SCRIBE_CMD_ROW, 0,
+			"i=write  w=save  q=quit  x=save+quit  /=search  g=goto");
+	}
+}
+
+static void scribe_draw_gutter(size_t row, size_t line_no) {
+	char buf[SCRIBE_GUTTER_WIDTH];
+	for (size_t i = 0; i < SCRIBE_GUTTER_WIDTH; i++) buf[i] = ' ';
+
+	size_t pos = SCRIBE_GUTTER_WIDTH - 2;
+	size_t v = line_no;
+
+	if (v == 0) {
+		buf[pos] = '0';
+	} else {
+		while (v > 0) {
+			buf[pos] = (char)('0' + (v % 10));
+			v /= 10;
+			if (pos == 0) break;
+			pos--;
+		}
+	}
+
+	for (size_t i = 0; i < SCRIBE_GUTTER_WIDTH; i++) {
+		terminal_putentry_at(row, i, buf[i], SCRIBE_GUTTER_COLOR);
+	}
 }
 
 static void scribe_draw_text(scribe_t* ed) {
@@ -183,12 +221,19 @@ static void scribe_draw_text(scribe_t* ed) {
 		terminal_clear_row(vr);
 
 		size_t line_index = ed->top_line + vr;
-		if (line_index >= ed->line_count) continue;
 
-		const char* line = ed->lines[line_index];
-		if (!line) continue;
+		if (line_index < ed->line_count) {
+			scribe_draw_gutter(vr, line_index + 1);
 
-		terminal_write_at(vr, 0, line);
+			const char* line = ed->lines[line_index];
+			if (line) {
+				terminal_write_at(vr, SCRIBE_TEXT_COL0, line);
+			}
+		} else {
+			for (size_t i = 0; i < SCRIBE_GUTTER_WIDTH; i++) {
+				terminal_putentry_at(vr, i, ' ', SCRIBE_GUTTER_COLOR);
+			}
+		}
 	}
 }
 
@@ -199,7 +244,7 @@ static void scribe_render(scribe_t* ed) {
 	scribe_draw_command(ed);
 
 	size_t screen_row = ed->cur_line - ed->top_line;
-	size_t screen_col = ed->cur_col;
+	size_t screen_col = SCRIBE_TEXT_COL0 + ed->cur_col;
 	if (screen_row >= SCRIBE_TEXT_ROWS) screen_row = SCRIBE_TEXT_ROWS - 1;
 	if (screen_col >= TEXT_WIDTH) screen_col = TEXT_WIDTH - 1;
 
@@ -411,14 +456,20 @@ static void scribe_prompt_line(const char* prompt, char* out, size_t cap) {
 	size_t len = 0;
 	out[0] = '\0';
 
-	for (;;) {
-		terminal_clear_row(SCRIBE_CMD_ROW);
-		terminal_write_at(SCRIBE_CMD_ROW, 0, prompt);
-		terminal_write_at(SCRIBE_CMD_ROW, kstrlen(prompt), out);
+	int dirty = 1;
 
-		size_t cursor_col = kstrlen(prompt) + len;
-		if (cursor_col >= TEXT_WIDTH) cursor_col = TEXT_WIDTH - 1;
-		terminal_set_cursor_pos(SCRIBE_CMD_ROW, cursor_col);
+	for (;;) {
+		if (dirty) {
+			terminal_clear_row(SCRIBE_CMD_ROW);
+			terminal_write_at(SCRIBE_CMD_ROW, 0, prompt);
+			terminal_write_at(SCRIBE_CMD_ROW, kstrlen(prompt), out);
+
+			size_t cursor_col = kstrlen(prompt) + len;
+			if (cursor_col >= TEXT_WIDTH) cursor_col = TEXT_WIDTH - 1;
+			terminal_set_cursor_pos(SCRIBE_CMD_ROW, cursor_col);
+
+			dirty = 0;
+		}
 
 		key_event_t ev;
 		if (!keyboard_try_get_key(&ev)) {
@@ -428,16 +479,51 @@ static void scribe_prompt_line(const char* prompt, char* out, size_t cap) {
 
 		if (ev.type == KEY_ENTER) {
 			return;
+		} else if (ev.type == KEY_ESC) {
+			out[0] = '\0';
+			return;
 		} else if (ev.type == KEY_BACKSPACE) {
 			if (len > 0) {
 				len--;
 				out[len] = '\0';
+				dirty = 1;
 			}
 		} else if (ev.type == KEY_CHAR) {
 			if (len + 1 < cap) {
 				out[len++] = ev.ch;
 				out[len] = '\0';
+				dirty = 1;
 			}
+		}
+	}
+}
+
+static int scribe_confirm_quit(void) {
+	for (;;) {
+		terminal_clear_row(SCRIBE_CMD_ROW);
+		terminal_write_at(SCRIBE_CMD_ROW, 0, "Quit without saving? (y/n): ");
+		terminal_set_cursor_pos(SCRIBE_CMD_ROW, 29);
+
+		key_event_t ev;
+		if (!keyboard_try_get_key(&ev)) {
+			yield();
+			continue;
+		}
+
+		if (ev.type == KEY_CHAR) {
+			char c = ev.ch;
+			if (c >= 'A' && c <= 'Z') c = (char)(c - 'A' + 'a');
+
+			if (c == 'y') {
+				terminal_putc_at(SCRIBE_CMD_ROW, 29, 'y');
+				return 1;
+			}
+			if (c == 'n') {
+				terminal_putc_at(SCRIBE_CMD_ROW, 29, 'n');
+				return 0;
+			}
+		} else if (ev.type == KEY_ESC) {
+			return 0;
 		}
 	}
 }
@@ -526,15 +612,22 @@ void scribe_open(const char* filename) {
 	}
 
 	terminal_clear_text_area();
-	
+
+	int needs_redraw = 1;
+
 	for (;;) {
-		scribe_render(&ed);
+		if (needs_redraw) {
+			scribe_render(&ed);
+			needs_redraw = 0;
+		}
 
 		key_event_t ev;
 		if (!keyboard_try_get_key(&ev)) {
 			yield();
 			continue;
 		}
+
+		needs_redraw = 1;
 
 		if (ed.mode == SCRIBE_MODE_WRITE) {
 			size_t line_len = scribe_strlen(ed.lines[ed.cur_line]);
@@ -566,7 +659,16 @@ void scribe_open(const char* filename) {
 			} else if (ev.type == KEY_ENTER) {
 				if (!scribe_split_line(&ed)) scribe_set_message(&ed, "Out of memory.");
 			} else if (ev.type == KEY_CHAR) {
-				if (!scribe_insert_char(&ed, ev.ch)) scribe_set_message(&ed, "Out of memory.");
+				if (ev.ch == '\t') {
+					for (int i = 0; i < 4; i++) {
+						if (!scribe_insert_char(&ed, ' ')) {
+							scribe_set_message(&ed, "Out of memory.");
+							break;
+						}
+					}
+				} else {
+					if (!scribe_insert_char(&ed, ev.ch)) scribe_set_message(&ed, "Out of memory.");
+				}
 			} else if (ev.type == KEY_PAGEUP) {
 				if (ed.top_line > 0) ed.top_line--;
 			} else if (ev.type == KEY_PAGEDOWN) {
@@ -591,8 +693,12 @@ void scribe_open(const char* filename) {
 				} else if (ev.ch == 'w') {
 					if (!scribe_save(&ed)) scribe_set_message(&ed, "Save failed.");
 				} else if (ev.ch == 'q') {
-					if (ed.modified) scribe_set_message(&ed, "Unsaved changes. Use x to save+quit.");
-					else break;
+					if (ed.modified) {
+						if (scribe_confirm_quit()) break;
+						scribe_set_message(&ed, "Quit canceled.");
+					} else {
+						break;
+					}
 				} else if (ev.ch == 'x') {
 					if (scribe_save(&ed)) break;
 					else scribe_set_message(&ed, "Save failed.");

@@ -78,22 +78,27 @@ size_t terminal_get_view_top(void) { return g_view_top; }
 static void render_text_window(void) {
 	for (size_t vr = 0; vr < TERM_HEIGHT; vr++) {
 		size_t src = g_view_top + vr;
+
 		for (size_t c = 0; c < TEXT_WIDTH; c++) {
-			char ch = ' ';
+			uint16_t cell = vga_entry(' ', term_color);
+
 			if (src < SCROLLBACK_ROWS) {
-				ch = (char)(g_textbuf[src][c] & 0xFF);
+				cell = g_textbuf[src][c];
 			}
-			VGA_MEMORY[vr * VGA_WIDTH + c] = vga_entry(ch, term_color);
+
+			VGA_MEMORY[vr * VGA_WIDTH + c] = cell;
 		}
+
 		// clear scroll bar col for this row
 		VGA_MEMORY[vr * VGA_WIDTH + SCROLLBAR_COL] = vga_entry(' ', term_color);
 	}
-
-	// draw  scroll bar
+	
+	// draw scroll bar
 	size_t max_top = (g_head_row >= TERM_HEIGHT) ? (g_head_row - TERM_HEIGHT + 1) : 0;
 	size_t marker_row = 0;
 	if (max_top > 0) marker_row = (g_view_top * TERM_HEIGHT) / (max_top + 1);
 	if (marker_row >= TERM_HEIGHT) marker_row = TERM_HEIGHT - 1;
+
 	VGA_MEMORY[marker_row * VGA_WIDTH + SCROLLBAR_COL] = vga_entry('|', term_color);
 	sync_hw_cursor();
 }
@@ -258,6 +263,23 @@ void terminal_putc_at(size_t row, size_t col, char c) {
 		VGA_MEMORY[row * VGA_WIDTH + col] = vga_entry(c, term_color);
 	} else {
 		VGA_MEMORY[row * VGA_WIDTH + col] = vga_entry(c, term_color);
+	}
+}
+
+void terminal_putentry_at(size_t row, size_t col, char c, uint8_t color) {
+	if (row >= VGA_HEIGHT || col >= VGA_WIDTH) return;
+
+	uint16_t cell = vga_entry(c, color);
+
+	if (row < TERM_HEIGHT) {
+		if (col >= TEXT_WIDTH) return;
+		size_t abs = g_view_top + row;
+		if (abs >= SCROLLBACK_ROWS) return;
+
+		g_textbuf[abs][col] = cell;
+		VGA_MEMORY[row * VGA_WIDTH + col] = cell;
+	} else {
+		VGA_MEMORY[row * VGA_WIDTH + col] = cell;
 	}
 }
 

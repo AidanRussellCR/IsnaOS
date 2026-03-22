@@ -8,8 +8,9 @@
 #define VFS_LBA_BASE 2048u
 #define VFS_MAGIC 0x50534631u
 
+// VFS ver 2.1
 #define VFS_VERSION_MAJOR 2u
-#define VFS_VERSION_MINOR 0u
+#define VFS_VERSION_MINOR 1u
 
 #define VFS_COMPAT_FLAGS 0u
 #define VFS_INCOMPAT_FLAGS 0u
@@ -23,7 +24,7 @@ typedef struct vfs_node {
 	struct vfs_node* parent;
 	struct vfs_node* sibling_next;
 	struct vfs_node* child_head;
-	char* file_data;
+	uint8_t* file_data;
 	size_t file_size;
 } vfs_node_t;
 
@@ -204,30 +205,37 @@ vfs_status_t vfs_fab(const char* filename) {
 	return VFS_OK;
 }
 
-vfs_status_t vfs_insp(const char* filename, const char** out_text) {
-	if (out_text) *out_text = 0;
+// insp for binary files
+vfs_status_t vfs_insp_bytes(const char* filename, const uint8_t** out_data, size_t* out_size) {
+	if (out_data) *out_data = 0;
+	if (out_size) *out_size = 0;
+
 	if (!g_cwd) return VFS_ERR_NOT_FOUND;
+
 	vfs_node_t* f = find_child(g_cwd, filename);
 	if (!f) return VFS_ERR_NOT_FOUND;
 	if (f->type != NODE_FILE) return VFS_ERR_IS_DIR;
-	if (out_text) *out_text = (f->file_data) ? f->file_data : "";
+
+	if (out_data) *out_data = f->file_data;
+	if (out_size) *out_size = f->file_size;
 	return VFS_OK;
 }
 
-vfs_status_t vfs_carve(const char* filename, const char* text) {
+// carve for binary files
+vfs_status_t vfs_carve_bytes(const char* filename, const uint8_t* data, size_t size) {
 	if (!g_cwd) return VFS_ERR_NOT_FOUND;
+
 	vfs_node_t* f = find_child(g_cwd, filename);
 	if (!f) return VFS_ERR_NOT_FOUND;
 	if (f->type != NODE_FILE) return VFS_ERR_IS_DIR;
 
-	const char* src = text ? text : "";
-	size_t n = kstrlen(src);
+	uint8_t* buf = 0;
+	if (size > 0) {
+		buf = (uint8_t*)kmalloc(size);
+		if (!buf) return VFS_ERR_NO_MEM;
 
-	char* buf = (char*)kmalloc(n + 1);
-	if (!buf) return VFS_ERR_NO_MEM;
-
-	for (size_t i = 0; i < n; i++) buf[i] = src[i];
-	buf[n] = '\0';
+		for (size_t i = 0; i < size; i++) buf[i] = data[i];
+	}
 
 	if (f->file_data) {
 		kfree(f->file_data);
@@ -236,9 +244,29 @@ vfs_status_t vfs_carve(const char* filename, const char* text) {
 	}
 
 	f->file_data = buf;
-	f->file_size = n;
+	f->file_size = size;
 	vfs_mark_dirty();
 	return VFS_OK;
+}
+
+// For scripts/editor 
+vfs_status_t vfs_insp(const char* filename, const char** out_text) {
+	if (out_text) *out_text = 0;
+
+	const uint8_t* data = 0;
+	size_t size = 0;
+	vfs_status_t st = vfs_insp_bytes(filename, &data, &size);
+	if (st != VFS_OK) return st;
+
+	if (out_text) *out_text = (const char*)(data ? data : (const uint8_t*)"");
+	return VFS_OK;
+}
+
+// For scripts/editor
+vfs_status_t vfs_carve(const char* filename, const char* text) {
+	const char* src = text ? text : "";
+	size_t n = kstrlen(src) + 1;
+	return vfs_carve_bytes(filename, (const uint8_t*)src, n);
 }
 
 vfs_status_t vfs_burn(const char* filename) {
@@ -531,12 +559,11 @@ vfs_status_t vfs_load(void) {
 		n->name[31] = '\0';
 
 		if (n->type == NODE_FILE && dn.file_len > 0) {
-			n->file_data = (char*)kmalloc(dn.file_len + 1u);
+			n->file_data = (uint8_t*)kmalloc(dn.file_len);
 			if (!n->file_data) return VFS_ERR_NO_MEM;
 			for (uint32_t k = 0; k < dn.file_len; k++) {
-				n->file_data[k] = (char)databuf[dn.file_off + k];
+				n->file_data[k] = databuf[dn.file_off + k];
 			}
-			n->file_data[dn.file_len] = '\0';
 			n->file_size = dn.file_len;
 		}
 

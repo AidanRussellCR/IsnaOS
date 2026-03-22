@@ -7,6 +7,8 @@
 #include "kernel/sched.h"
 #include "kernel/scribe.h"
 #include "kernel/task.h"
+#include "kernel/glm.h"
+#include "kernel/shape.h"
 #include "lib/str.h"
 #include "ui/overlays.h"
 #include "arsc/i386/ports.h"
@@ -354,6 +356,9 @@ static void shell_execute_command(const char* buf, int from_script, int depth) {
 	      		if (s == VFS_OK) terminal_write("Saved to disk.\n");
 	      		else terminal_write("Save failed.\n");
 	      	}
+	} else if (starts_with(buf, "chant ")) {
+		terminal_write(buf + 6);
+		terminal_putc('\n');
 	} else if (streq(buf, "exit")) {
 		if (from_script) {
 			terminal_write("Scripts may not shut down the system.\n");
@@ -377,10 +382,13 @@ static void shell_execute_command(const char* buf, int from_script, int depth) {
 		terminal_write("Commands:\n");
 		terminal_write("  help                    - show this help\n");
 		terminal_write("  clear                   - clear terminal text area\n");
+		terminal_write("  chant <text>            - print text to terminal\n");
 		terminal_write("  ps                      - list running tasks\n");
 		terminal_write("  kill <id>               - mark a task for reaping\n");
 		terminal_write("  spawn hb0               - spawn heartbeat type 0\n");
 		terminal_write("  spawn hb1               - spawn heartbeat type 1\n");
+		terminal_write("  summon <file.glm>       - load and run golem binary\n");
+		terminal_write("  shape <in.asm> <out>    - assemble source into out.glm\n");
 		terminal_write("  yield                   - yield scheduler\n");
 		terminal_write("  sync                    - save filesystem to disk\n");
 		terminal_write("  exit                    - save and shut down\n");
@@ -408,6 +416,10 @@ static void shell_execute_command(const char* buf, int from_script, int depth) {
       		} else {
       			terminal_write("Usage: kill <id>\n");
       		}
+      	} else if (starts_with(buf, "summon ")) {
+		if (!glm_load_and_run(buf + 7)) {
+			terminal_write("Summon failed.\n");
+		}
       	} else if (streq(buf, "spawn hb0")) {
       		int id = task_create(task_heartbeat0, "heartbeat0");
       		if (id >= 0) terminal_write("Spawned hb0.\n");
@@ -514,6 +526,33 @@ static void shell_execute_command(const char* buf, int from_script, int depth) {
 		if (st == VFS_OK) terminal_write("Spell learned.\n");
 		else vfs_print_status(st);
 		if (vfs_is_dirty()) vfs_save();
+	} else if (starts_with(buf, "shape ")) {
+		const char* args = buf + 6;
+		const char* sp = kstrstr(args, " ");
+		if (!sp) {
+			terminal_write("Usage: shape <input.asm> <output_stem>\n");
+		} else {
+			char in[32];
+			char out[32];
+
+			size_t in_len = (size_t)(sp - args);
+			if (in_len >= sizeof(in)) in_len = sizeof(in) - 1;
+			for (size_t i = 0; i < in_len; i++) in[i] = args[i];
+			in[in_len] = '\0';
+
+			const char* outp = sp + 1;
+			while (*outp == ' ') outp++;
+
+			kstrncpy0(out, outp, sizeof(out));
+
+			if (!in[0] || !out[0]) {
+				terminal_write("Usage: shape <input.asm> <output_stem>\n");
+			} else {
+				if (!shape_asm_to_glm(in, out)) {
+					terminal_write("Shaping failed.\n");
+				}
+			}
+		}
 	} else if (starts_with(buf, "cast ")) {
 		shell_cast_script(buf + 5, depth);
       	} else {

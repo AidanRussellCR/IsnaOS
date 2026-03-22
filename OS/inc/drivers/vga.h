@@ -20,6 +20,8 @@ void terminal_write_at(size_t row, size_t col, const char* s);
 void terminal_putc(char c);
 void terminal_putc_at(size_t row, size_t col, char c);
 
+void terminal_putentry_at(size_t row, size_t col, char c, uint8_t color);
+
 size_t terminal_get_buffer_row(void);
 size_t terminal_get_view_top(void);
 

@@ -68,6 +68,7 @@ int keyboard_try_get_key(key_event_t* ev) {
 
 	if (c == '\n') { ev->type = KEY_ENTER; return 1; }
 	if (c == '\b') { ev->type = KEY_BACKSPACE; return 1; }
+	if (c == '\t') { ev->type = KEY_CHAR; ev->ch = '\t'; return 1; }
 
 	if ((unsigned char)c < 32 || (unsigned char)c > 126) return 0;
 
