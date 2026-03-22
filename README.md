@@ -8,10 +8,12 @@ Current functionality:
  - File system
  - Scripts/execution (for terminal commands)
  - Text editor (Scribe)
+ - Assembler (Shape)
+ - Executables (Golems)
 
 Short Term Goals:
- - Fix bugs with scribe display
- - Make scribe usage more intuitive for user
+ - Continue to improve and expand on the Shape Assembler
+ - Continue to improve and expand on the Golem executable format
 
 Roadmap:
  1) Priority Scheduling/Multi-level Queue
