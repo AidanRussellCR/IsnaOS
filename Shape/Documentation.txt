@@ -1,11 +1,13 @@
-Currently, the Shape v1.0 Assembler is very limited in scope.
+Currently, the Shape v2.0 Assembler is very limited in scope.
 
+-----------------------------
 
 Sections:
 
 .code
 .data
 
+-----------------------------
 
 Labels:
 
@@ -14,7 +16,9 @@ Labels:
 entry:
 string1:
 string2:
+loop:
 
+-----------------------------
 
 Instructions:
 
@@ -24,12 +28,73 @@ ret
 yield
  - Calls the host API yield function
 
+nop
+ - Do nothing
+
 exit
  - Calls the host API exit function (terminates program)
 
-speak <label>
+speak <label>  |  say <label>      | >> (interchangeable)
  - Prints a null-terminated string stored in .data at the given label
 
+show
+ - Prints the value in register a
+
+hear
+ - Await user input (single char right now)
+
+-----------------------------
+
+Arithmetic:
+
+(<imm> is an immediate)
+
+mov a, <imm>
+ - Set a
+
+add a, <imm>
+ - a + imm
+
+sub a, <imm>
+ - a - imm
+
+mul a, <imm>
+ - a * imm
+
+div a, <imm>
+ - a / imm
+
+cmp a, <imm>
+ - Compare a to imm
+
+
+Immediates can be integers or character literals
+ex:
+10
+-4
+'1'
+'\n'
+
+-----------------------------
+
+Control Flow:
+
+jmp <label>
+ - Unconditional jump to label
+
+jz <label>
+ - Jump to label if zero
+
+jnz <label>
+ - Jump if not zero
+
+je <label>
+ - Jump if equal
+
+jne <label>
+ - Jump if not equal
+
+-----------------------------
 
 Data:
 
@@ -50,6 +115,7 @@ Requirements:
  - speak must refer to a .data label
 
 
+-----------------------------
 
 
 Building and Summoning a Golem:
