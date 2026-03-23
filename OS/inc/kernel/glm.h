@@ -30,14 +30,12 @@ typedef struct __attribute__((packed)) {
 typedef struct {
 	uint32_t api_version;
 
-	void (*print)(const char* s);
-	void (*yield)(void);
-	
-	// print a NUL-terminated string stored at image + offset
-	void (*print_off)(uint32_t off);
-
-	// set exit flag/code for golem to return
-	void (*exit)(int code);
+	void (*print)(const char* s);    // 0x04
+	void (*yield)(void);             // 0x08
+	void (*print_off)(uint32_t off); // 0x0C
+	void (*exit)(int code);          // 0x10
+	int  (*getch)(void);             // 0x14
+	void (*print_num)(int value);    // 0x18
 } glm_host_api_t;
 
 typedef int (*glm_entry_t)(const glm_host_api_t* api);

@@ -24,8 +24,12 @@ typedef struct vfs_node {
 	struct vfs_node* parent;
 	struct vfs_node* sibling_next;
 	struct vfs_node* child_head;
+	
 	uint8_t* file_data;
 	size_t file_size;
+
+	uint32_t disk_file_off; // offset within on-disk data
+	uint8_t file_loaded; // 1 if file_data is present in memory
 } vfs_node_t;
 
 static int g_dirty = 0;
@@ -35,6 +39,7 @@ static void vfs_mark_clean(void) { g_dirty = 0; }
 
 static vfs_node_t* g_root = 0;
 static vfs_node_t* g_cwd = 0;
+static uint32_t g_mounted_data_lba = 0;
 
 static int name_valid(const char* s) {
 	if (!s || s[0] == '\0') return 0;
@@ -88,6 +93,152 @@ static vfs_node_t* find_base_dir(void) {
 	vfs_node_t* root = find_child(g_root, "root");
 	if (!root) return 0;
 	return find_child(root, "base");
+}
+
+static int path_is_absolute(const char* path) {
+	if (!path || !path[0]) return 0;
+	if (path[0] == '/') return 1;
+	if (path[0] == 'P') return 1;
+	return 0;
+}
+
+static int split_path_token(const char** p, char* out, size_t cap) {
+	size_t i = 0;
+
+	while (**p == '/') (*p)++;
+	if (!**p) return 0;
+
+	while (**p && **p != '/' && i + 1 < cap) {
+		out[i++] = **p;
+		(*p)++;
+	}
+	out[i] = '\0';
+
+	while (**p == '/') (*p)++;
+	return 1;
+}
+
+static vfs_node_t* resolve_dir_path(const char* path) {
+	if (!path || !path[0]) return g_cwd;
+
+	vfs_node_t* cur = path_is_absolute(path) ? g_root : g_cwd;
+	const char* p = path;
+	char tok[32];
+
+	if (!cur) return 0;
+
+	while (split_path_token(&p, tok, sizeof(tok))) {
+		if (streq(tok, ".")) continue;
+
+		if (streq(tok, "..")) {
+			if (cur->parent) cur = cur->parent;
+			continue;
+		}
+
+		if (streq(tok, "P") && cur == g_root) {
+			continue;
+		}
+
+		vfs_node_t* next = find_child(cur, tok);
+		if (!next || next->type != NODE_DIR) return 0;
+		cur = next;
+	}
+
+	return cur;
+}
+
+static int is_ancestor(vfs_node_t* maybe_ancestor, vfs_node_t* node) {
+	while (node) {
+		if (node == maybe_ancestor) return 1;
+		node = node->parent;
+	}
+	return 0;
+}
+
+static int load_file_bytes(vfs_node_t* f) {
+	if (!f || f->type != NODE_FILE) return 0;
+	if (f->file_loaded) return 1;
+	if (f->file_size == 0) {
+		f->file_loaded = 1;
+		return 1;
+	}
+	if (g_mounted_data_lba == 0) return 0;
+
+	uint8_t* buf = (uint8_t*)kmalloc(f->file_size);
+	if (!buf) return 0;
+
+	uint32_t start_lba = g_mounted_data_lba + (f->disk_file_off / ATA_SECTOR_SIZE);
+	uint32_t end_off = f->disk_file_off + (uint32_t)f->file_size;
+	uint32_t end_lba = g_mounted_data_lba + ((end_off - 1u) / ATA_SECTOR_SIZE);
+
+	uint8_t sector[ATA_SECTOR_SIZE];
+	size_t outp = 0;
+	uint32_t cur_off = f->disk_file_off;
+
+	for (uint32_t lba = start_lba; lba <= end_lba; lba++) {
+		if (ata_pio_read28(lba, sector) != 0) {
+			kfree(buf);
+			return 0;
+		}
+
+		uint32_t sector_base_off = (lba - g_mounted_data_lba) * ATA_SECTOR_SIZE;
+		uint32_t begin = 0;
+		uint32_t end = ATA_SECTOR_SIZE;
+
+		if (cur_off > sector_base_off) begin = cur_off - sector_base_off;
+
+		uint32_t file_end_off = f->disk_file_off + (uint32_t)f->file_size;
+		if (sector_base_off + end > file_end_off) end = file_end_off - sector_base_off;
+
+		for (uint32_t i = begin; i < end; i++) {
+			buf[outp++] = sector[i];
+		}
+	}
+
+	f->file_data = buf;
+	f->file_loaded = 1;
+	return 1;
+}
+
+static int materialize_all_files(vfs_node_t* n) {
+	if (!n) return 1;
+
+	if (n->type == NODE_FILE) {
+		if (!load_file_bytes(n)) return 0;
+	}
+
+	for (vfs_node_t* ch = n->child_head; ch; ch = ch->sibling_next) {
+		if (!materialize_all_files(ch)) return 0;
+	}
+	return 1;
+}
+
+static void make_renamed_name(const char* base, int idx, char* out, size_t cap) {
+	size_t dot = (size_t)-1;
+	size_t n = kstrlen(base);
+
+	for (size_t i = 0; i < n; i++) {
+		if (base[i] == '.') dot = i;
+	}
+
+	size_t p = 0;
+	if (dot == (size_t)-1) dot = n;
+
+	for (size_t i = 0; i < dot && p + 1 < cap; i++) out[p++] = base[i];
+	if (p + 2 < cap) out[p++] = '_';
+
+	char tmp[16];
+	int tp = 0;
+	int v = idx;
+	if (v == 0) tmp[tp++] = '0';
+	while (v > 0 && tp < (int)sizeof(tmp)) {
+		tmp[tp++] = (char)('0' + (v % 10));
+		v /= 10;
+	}
+	while (tp > 0 && p + 1 < cap) out[p++] = tmp[--tp];
+
+	for (size_t i = dot; i < n && p + 1 < cap; i++) out[p++] = base[i];
+	out[p] = '\0';
 }
 
 static vfs_status_t remove_child(vfs_node_t* dir, vfs_node_t* target) {
@@ -162,22 +313,14 @@ void vfs_pwd(char* out, size_t cap) {
 	}
 }
 
-vfs_status_t vfs_cd(const char* name) {
+vfs_status_t vfs_cd(const char* path) {
 	if (!g_cwd) return VFS_ERR_NOT_FOUND;
-	if (!name || name[0] == '\0') return VFS_ERR_NAME_INVALID;
-	if (streq(name, "/")) {
-		g_cwd = g_root;
-		return VFS_OK;
-	}
-	if (streq(name, "..")) {
-		if (g_cwd->parent) g_cwd = g_cwd->parent;
-		return VFS_OK;
-	}
+	if (!path || path[0] == '\0') return VFS_ERR_NAME_INVALID;
 
-	vfs_node_t* c = find_child(g_cwd, name);
-	if (!c) return VFS_ERR_NOT_FOUND;
-	if (c->type != NODE_DIR) return VFS_ERR_NOT_DIR;
-	g_cwd = c;
+	vfs_node_t* dst = resolve_dir_path(path);
+	if (!dst) return VFS_ERR_NOT_FOUND;
+
+	g_cwd = dst;
 	return VFS_OK;
 }
 
@@ -216,6 +359,8 @@ vfs_status_t vfs_insp_bytes(const char* filename, const uint8_t** out_data, size
 	if (!f) return VFS_ERR_NOT_FOUND;
 	if (f->type != NODE_FILE) return VFS_ERR_IS_DIR;
 
+	if (!load_file_bytes(f)) return VFS_ERR_NO_MEM;
+
 	if (out_data) *out_data = f->file_data;
 	if (out_size) *out_size = f->file_size;
 	return VFS_OK;
@@ -240,11 +385,11 @@ vfs_status_t vfs_carve_bytes(const char* filename, const uint8_t* data, size_t s
 	if (f->file_data) {
 		kfree(f->file_data);
 		f->file_data = 0;
-		f->file_size = 0;
 	}
-
+	
 	f->file_data = buf;
 	f->file_size = size;
+	f->file_loaded = 1;
 	vfs_mark_dirty();
 	return VFS_OK;
 }
@@ -336,6 +481,7 @@ static uint32_t bytes_to_sectors(uint32_t bytes) {
 
 vfs_status_t vfs_save(void) {
 	if (!g_root) return VFS_ERR_NOT_FOUND;
+	if (!materialize_all_files(g_root)) return VFS_ERR_NO_MEM;
 
 	enum { MAX_NODES_SNAPSHOT = 1024 };
 	vfs_node_t** nodes = (vfs_node_t**)kmalloc(sizeof(vfs_node_t*) * MAX_NODES_SNAPSHOT);
@@ -509,7 +655,9 @@ vfs_status_t vfs_load(void) {
 
 	uint32_t node_table_bytes = sb.node_count * (uint32_t)sizeof(vfs_disk_node_t);
 	uint32_t node_table_sectors = bytes_to_sectors(node_table_bytes);
-	uint32_t data_sectors = bytes_to_sectors(sb.data_bytes);
+	//uint32_t data_sectors = bytes_to_sectors(sb.data_bytes);
+	
+	g_mounted_data_lba = VFS_LBA_BASE + 1u + node_table_sectors;
 
 	uint8_t* nodebuf = (uint8_t*)kmalloc(node_table_sectors * ATA_SECTOR_SIZE);
 	if (!nodebuf) return VFS_ERR_NO_MEM;
@@ -517,18 +665,6 @@ vfs_status_t vfs_load(void) {
 	for (uint32_t s = 0; s < node_table_sectors; s++) {
 		if (ata_pio_read28(VFS_LBA_BASE + 1u + s, sector) != 0) return VFS_ERR_BUSY;
 		for (uint32_t j = 0; j < ATA_SECTOR_SIZE; j++) nodebuf[s * ATA_SECTOR_SIZE + j] = sector[j];
-	}
-
-	uint8_t* databuf = 0;
-	if (sb.data_bytes > 0) {
-		databuf = (uint8_t*)kmalloc(data_sectors * ATA_SECTOR_SIZE);
-		if (!databuf) return VFS_ERR_NO_MEM;
-
-		uint32_t data_lba = VFS_LBA_BASE + 1u + node_table_sectors;
-		for (uint32_t s = 0; s < data_sectors; s++) {
-			if (ata_pio_read28(data_lba + s, sector) != 0) return VFS_ERR_BUSY;
-			for (uint32_t j = 0; j < ATA_SECTOR_SIZE; j++) databuf[s * ATA_SECTOR_SIZE + j] = sector[j];
-		}
 	}
 
 	vfs_node_t** nodes = (vfs_node_t**)kmalloc(sizeof(vfs_node_t*) * sb.node_count);
@@ -558,13 +694,11 @@ vfs_status_t vfs_load(void) {
 		for (int k = 0; k < 32; k++) n->name[k] = dn.name[k];
 		n->name[31] = '\0';
 
-		if (n->type == NODE_FILE && dn.file_len > 0) {
-			n->file_data = (uint8_t*)kmalloc(dn.file_len);
-			if (!n->file_data) return VFS_ERR_NO_MEM;
-			for (uint32_t k = 0; k < dn.file_len; k++) {
-				n->file_data[k] = databuf[dn.file_off + k];
-			}
+		if (n->type == NODE_FILE) {
+			n->file_data = 0;
 			n->file_size = dn.file_len;
+			n->disk_file_off = dn.file_off;
+			n->file_loaded = (dn.file_len == 0) ? 1 : 0;
 		}
 
 		nodes[i] = n;
@@ -590,6 +724,60 @@ vfs_status_t vfs_load(void) {
 
 	kfree(nodes);
 	vfs_mark_clean();
+	return VFS_OK;
+}
+
+vfs_status_t vfs_warp(const char* src_name, const char* dest_path, vfs_warp_mode_t mode, char* out_final_name, size_t out_final_name_cap) {
+	if (out_final_name && out_final_name_cap) out_final_name[0] = '\0';
+
+	if (!g_cwd) return VFS_ERR_NOT_FOUND;
+	if (!src_name || !src_name[0]) return VFS_ERR_NAME_INVALID;
+	if (!dest_path || !dest_path[0]) return VFS_ERR_NAME_INVALID;
+
+	vfs_node_t* src = find_child(g_cwd, src_name);
+	if (!src) return VFS_ERR_NOT_FOUND;
+
+	vfs_node_t* dest_dir = resolve_dir_path(dest_path);
+	if (!dest_dir) return VFS_ERR_NOT_FOUND;
+	if (dest_dir->type != NODE_DIR) return VFS_ERR_NOT_DIR;
+
+	if (src == g_root || src == dest_dir) return VFS_ERR_BUSY;
+	if (src->type == NODE_DIR && is_ancestor(src, dest_dir)) return VFS_ERR_BUSY;
+
+	char final_name[32];
+	kstrncpy0(final_name, src->name, sizeof(final_name));
+
+	vfs_node_t* existing = find_child(dest_dir, final_name);
+	if (existing && existing != src) {
+		if (mode == VFS_WARP_FAIL) return VFS_ERR_EXISTS;
+
+		if (mode == VFS_WARP_OVERWRITE) {
+			if (existing->type == NODE_DIR && existing->child_head) return VFS_ERR_BUSY;
+			remove_child(dest_dir, existing);
+			existing->parent = 0;
+			existing->sibling_next = 0;
+			free_subtree(existing);
+		} else if (mode == VFS_WARP_RENAME) {
+			int idx = 1;
+			do {
+				make_renamed_name(src->name, idx++, final_name, sizeof(final_name));
+			} while (find_child(dest_dir, final_name));
+		}
+	}
+
+	if (src->parent) remove_child(src->parent, src);
+
+	kmemset(src->name, 0, sizeof(src->name));
+	for (size_t i = 0; i + 1 < sizeof(src->name) && final_name[i]; i++) src->name[i] = final_name[i];
+	src->parent = dest_dir;
+	src->sibling_next = 0;
+	link_child(dest_dir, src);
+
+	if (out_final_name && out_final_name_cap) {
+		kstrncpy0(out_final_name, src->name, out_final_name_cap);
+	}
+
+	vfs_mark_dirty();
 	return VFS_OK;
 }
 

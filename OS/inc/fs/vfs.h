@@ -15,6 +15,12 @@ typedef enum {
 	VFS_ERR_BUSY
 } vfs_status_t;
 
+typedef enum {
+	VFS_WARP_FAIL = 0,
+	VFS_WARP_OVERWRITE,
+	VFS_WARP_RENAME
+} vfs_warp_mode_t;
+
 void vfs_init(void);
 
 // Working directory
@@ -42,6 +48,9 @@ vfs_status_t vfs_is_learned(const char* filename, int* out_learned);
 
 void vfs_shop(vfs_list_cb_t cb, void* user);
 int vfs_is_dirty(void);
+
+// move/rename files
+vfs_status_t vfs_warp(const char* src_name, const char* dest_path, vfs_warp_mode_t mode, char* out_final_name, size_t out_final_name_cap);
 
 // Scripts
 typedef void (*vfs_spell_cb_t)(const char* name, void* user);

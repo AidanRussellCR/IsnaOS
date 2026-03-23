@@ -4,6 +4,7 @@
 #include "fs/vfs.h"
 #include "mm/heap.h"
 #include "drivers/vga.h"
+#include "drivers/keyboard.h"
 #include "kernel/sched.h"
 
 // This setup is currently not intended for C programs as the loader is not developed enough, but it will be in the future
@@ -32,6 +33,55 @@ static void glm_api_print_off(uint32_t off) {
 static void glm_api_exit(int code) {
 	g_glm_exit_called = 1;
 	g_glm_exit_code = code;
+}
+
+static int glm_api_getch(void) {
+	for (;;) {
+		key_event_t ev;
+		if (!keyboard_try_get_key(&ev)) {
+			yield();
+			continue;
+		}
+
+		if (ev.type == KEY_CHAR) {
+			terminal_putc(ev.ch);
+			return (unsigned char)ev.ch;
+		}
+		if (ev.type == KEY_ENTER) {
+			terminal_putc('\n');
+			return '\n';
+		}
+		if (ev.type == KEY_BACKSPACE) {
+			return '\b';
+		}
+		if (ev.type == KEY_ESC) {
+			return 27;
+		}
+	}
+}
+
+static void glm_api_print_num(int value) {
+	char buf[16];
+	int neg = 0;
+	int p = 0;
+
+	if (value == 0) {
+		terminal_write("0");
+		return;
+	}
+
+	if (value < 0) {
+		neg = 1;
+		value = -value;
+	}
+
+	while (value > 0 && p < (int)sizeof(buf)) {
+		buf[p++] = (char)('0' + (value % 10));
+		value /= 10;
+	}
+
+	if (neg) terminal_putc('-');
+	while (p > 0) terminal_putc(buf[--p]);
 }
 
 static int glm_validate(const glm_header_t* h, size_t file_size) {
@@ -107,6 +157,8 @@ int glm_load_and_run(const char* filename) {
 	api.yield = glm_api_yield;
 	api.print_off = glm_api_print_off;
 	api.exit = glm_api_exit;
+	api.getch = glm_api_getch;
+	api.print_num = glm_api_print_num;
 
 	glm_entry_t entry = (glm_entry_t)(image + h->entry_offset);
 

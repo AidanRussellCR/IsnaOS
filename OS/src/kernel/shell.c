@@ -311,6 +311,24 @@ static char read_yes_no(void) {
 	}
 }
 
+static char read_warp_choice(void) {
+	for (;;) {
+		key_event_t ev;
+		if (!keyboard_try_get_key(&ev)) { yield(); continue; }
+
+		if (ev.type == KEY_CHAR) {
+			char c = ev.ch;
+			if (c >= 'A' && c <= 'Z') c = (char)(c - 'A' + 'a');
+
+			if (c == 'y' || c == 'n' || c == 'o' || c == 'r') {
+				terminal_putc(c);
+				terminal_putc('\n');
+				return c;
+			}
+		}
+	}
+}
+
 static void vfs_print_status(vfs_status_t st) {
 	switch (st) {
 		case VFS_OK: terminal_write("It has been done.\n"); break;
@@ -395,6 +413,7 @@ static void shell_execute_command(const char* buf, int from_script, int depth) {
 		terminal_write("  shop                    - list files/directories here\n");
 		terminal_write("  formatfs                - format the filesystem\n");
 		terminal_write("  fab <file>              - create file\n");
+		terminal_write("  warp <name> <path>      - move file/dir to another directory\n");
 		terminal_write("  insp <file>             - read file contents\n");
 		terminal_write("  carve <text> :: <file>  - write text to file\n");
 		terminal_write("  scribe <file>           - open text editor\n");
@@ -441,6 +460,57 @@ static void shell_execute_command(const char* buf, int from_script, int depth) {
       		vfs_status_t st = vfs_fab(buf + 4);
       		vfs_print_status(st);
       		if (vfs_is_dirty()) vfs_save();
+	} else if (starts_with(buf, "warp ")) {
+		const char* args = buf + 5;
+		const char* sp = kstrstr(args, " ");
+		if (!sp) {
+			terminal_write("Usage: warp <file-or-dir> <dest-path>\n");
+		} else {
+			char src[32];
+			char dest[96];
+			size_t src_len = (size_t)(sp - args);
+			if (src_len >= sizeof(src)) src_len = sizeof(src) - 1;
+
+			for (size_t i = 0; i < src_len; i++) src[i] = args[i];
+			src[src_len] = '\0';
+
+			const char* dp = sp + 1;
+			while (*dp == ' ') dp++;
+			kstrncpy0(dest, dp, sizeof(dest));
+
+			if (!src[0] || !dest[0]) {
+				terminal_write("Usage: warp <file-or-dir> <dest-path>\n");
+			} else {
+				vfs_warp_mode_t mode = VFS_WARP_FAIL;
+				char final_name[32];
+
+				for (;;) {
+					vfs_status_t st = vfs_warp(src, dest, mode, final_name, sizeof(final_name));
+					if (st == VFS_OK) {
+						terminal_write("Warped as ");
+						terminal_write(final_name);
+						terminal_putc('\n');
+						if (vfs_is_dirty()) vfs_save();
+						break;
+					}
+					if (st == VFS_ERR_EXISTS) {
+						terminal_write("Name conflict. y=overwrite one, n=cancel, o=overwrite all, r=rename all: ");
+						char c = read_warp_choice();
+						if (c == 'y') mode = VFS_WARP_OVERWRITE;
+						else if (c == 'o') mode = VFS_WARP_OVERWRITE;
+						else if (c == 'r') mode = VFS_WARP_RENAME;
+						else {
+							terminal_write("Canceled.\n");
+							break;
+						}
+						continue;
+					}
+
+					vfs_print_status(st);
+					break;
+				}
+			}
+		}
       	} else if (starts_with(buf, "insp ")) {
       		const char* text = 0;
       		vfs_status_t st = vfs_insp(buf + 5, &text);

@@ -9,8 +9,8 @@
 
 void kmain(void) {
 	terminal_init();
+	terminal_write("--- IsnaOS ---\n");
 	terminal_write("Welcome to the land of Myrkthrima!\n");
-	terminal_write("  Also known as AidanOS.\n");
 	terminal_write("use 'help' for a list of commands.\n---------------\n\n");
 
 	vga_cursor_hide();
@@ -35,8 +35,8 @@ void kmain(void) {
 
 	task_create(task_wraith, "wraith");
 	task_create(task_shell, "shell");
-	task_create(task_heartbeat0, "heartbeat0");
-	task_create(task_heartbeat1, "heartbeat1");
+	//task_create(task_heartbeat0, "heartbeat0");
+	//task_create(task_heartbeat1, "heartbeat1");
 
 	__asm__ volatile("cli");
 	schedule();
