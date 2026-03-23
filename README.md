@@ -1,6 +1,7 @@
 Just a repository for a small OS project. 
 
-Not necessarily planning to have a full GUI, but maybe in the future.
+Now known as IsnaOS, meaning Ice in the Thurlsk language.
+I'd like to think it represents the slippery slope of beginning this project to understand kernels better and then becoming much more than that.
 
 Current functionality:
  - Basic terminal with curser
