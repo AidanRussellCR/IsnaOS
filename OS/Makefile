@@ -1,6 +1,5 @@
-PREFIX ?= $(HOME)/opt/cross
-CC := $(PREFIX)/bin/i686-elf-gcc
-LD := $(PREFIX)/bin/i686-elf-ld
+CC := /bin/i686-elf-gcc
+LD := /bin/i686-elf-ld
 AS := nasm
 
 CFLAGS := -std=c11 -ffreestanding -O2 -Wall -Wextra -m32 -Iinc
