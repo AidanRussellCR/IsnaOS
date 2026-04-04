@@ -38,6 +38,6 @@ typedef struct {
 	void (*print_num)(int value);    // 0x18
 } glm_host_api_t;
 
-typedef int (*glm_entry_t)(const glm_host_api_t* api);
+typedef int (*glm_entry_t)(const glm_host_api_t* api, uint8_t* image_base);
 
 int glm_load_and_run(const char* filename);

@@ -203,6 +203,25 @@ static int parse_imm(const char* s, int32_t* out) {
 	return 1;
 }
 
+static int parse_bracket_label(const char* s, char* out, size_t cap) {
+	s = trim_left((char*)s);
+	if (*s != '[') return 0;
+	s++;
+
+	s = trim_left((char*)s);
+
+	size_t i = 0;
+	while (*s && *s != ']' && !is_space_ch(*s) && i + 1 < cap) {
+		out[i++] = *s++;
+	}
+	out[i] = '\0';
+
+	s = trim_left((char*)s);
+	if (*s != ']') return 0;
+
+	return i > 0;
+}
+
 static int emit_u32_le(uint8_t* buf, size_t* p, size_t cap, uint32_t v) {
 	if (*p + 4 > cap) return 0;
 	buf[(*p)++] = (uint8_t)(v & 0xFF);
@@ -226,6 +245,7 @@ static int code_size_of(const char* line) {
 	if (streq(line, "ret")) return 1;
 	if (streq(line, "nop")) return 1;
 	if (streq(line, "yield")) return 7;
+	if (streq(line, "loadbase")) return 4;
 	if (streq(line, "exit")) return 13;
 	if (streq(line, "hear")) return 7;
 	if (streq(line, "show")) return 11;
@@ -233,7 +253,11 @@ static int code_size_of(const char* line) {
 	if (starts_with(line, "speak ")) return 15;
 	if (starts_with(line, "say ")) return 15;
 
+	if (starts_with(line, "mov a, [")) return 6;
+	if (starts_with(line, "mov [")) return 6;
 	if (starts_with(line, "mov a,")) return 5;
+	if (starts_with(line, "lea a,")) return 6;
+
 	if (starts_with(line, "add a,")) return 5;
 	if (starts_with(line, "sub a,")) return 5;
 	if (starts_with(line, "mul a,")) return 6;
@@ -316,6 +340,13 @@ int shape_asm_to_glm(const char* input_name, const char* output_stem) {
 						return 0;
 					}
 					data_size += (uint32_t)n;
+				} else if (starts_with(line, "dd ")) {
+					int32_t imm;
+					if (!parse_imm(line + 3, &imm)) {
+						terminal_write("Bad dd immediate.\n");
+						return 0;
+					}
+					data_size += 4;
 				} else {
 					terminal_write("Unknown data directive: [");
 					terminal_write(line);
@@ -394,6 +425,11 @@ int shape_asm_to_glm(const char* input_name, const char* output_stem) {
 					if (!emit_byte(code, &code_p, code_size, 0xFF)) goto emit_fail;
 					if (!emit_byte(code, &code_p, code_size, 0x52)) goto emit_fail;
 					if (!emit_byte(code, &code_p, code_size, 0x08)) goto emit_fail;
+				} else if (streq(line, "loadbase")) {
+					if (!emit_byte(code, &code_p, code_size, 0x8B)) goto emit_fail;
+					if (!emit_byte(code, &code_p, code_size, 0x5C)) goto emit_fail;
+					if (!emit_byte(code, &code_p, code_size, 0x24)) goto emit_fail;
+					if (!emit_byte(code, &code_p, code_size, 0x08)) goto emit_fail;
 				} else if (streq(line, "exit")) {
 					if (!emit_byte(code, &code_p, code_size, 0x8B)) goto emit_fail;
 					if (!emit_byte(code, &code_p, code_size, 0x54)) goto emit_fail;
@@ -465,6 +501,79 @@ int shape_asm_to_glm(const char* input_name, const char* output_stem) {
 					if (!emit_byte(code, &code_p, code_size, 0x83)) goto emit_fail;
 					if (!emit_byte(code, &code_p, code_size, 0xC4)) goto emit_fail;
 					if (!emit_byte(code, &code_p, code_size, 0x04)) goto emit_fail;
+
+				} else if (starts_with(line, "mov a, [")) {
+					char name[32];
+					shape_sec_t lsec = SHAPE_SEC_NONE;
+					uint32_t loff = 0;
+
+					if (!parse_bracket_label(line + 6, name, sizeof(name))) {
+						terminal_write("Bad label in mov load.\n");
+						goto fail;
+					}
+
+					if (!find_label(labels, label_count, name, &lsec, &loff) || lsec != SHAPE_SEC_DATA) {
+						terminal_write("Unknown data label in mov load.\n");
+						goto fail;
+					}
+
+					uint32_t image_off = code_size + loff;
+
+					// mov eax, [ebx + imm32]
+					if (!emit_byte(code, &code_p, code_size, 0x8B)) goto emit_fail;
+					if (!emit_byte(code, &code_p, code_size, 0x83)) goto emit_fail;
+					if (!emit_u32_le(code, &code_p, code_size, image_off)) goto emit_fail;
+				} else if (starts_with(line, "mov [")) {
+					const char* comma = 0;
+					for (const char* p = line; *p; p++) {
+						if (*p == ',') {
+							comma = p;
+							break;
+						}
+					}
+
+					if (!comma) {
+						terminal_write("Bad mov store syntax.\n");
+						goto fail;
+					}
+
+					char name[32];
+					shape_sec_t lsec = SHAPE_SEC_NONE;
+					uint32_t loff = 0;
+
+					char lhs[64];
+					size_t lhs_len = (size_t)(comma - (line + 4));
+					if (lhs_len + 1 > sizeof(lhs)) {
+						terminal_write("Bad mov store label.\n");
+						goto fail;
+					}
+
+					for (size_t i = 0; i < lhs_len; i++) lhs[i] = line[4 + i];
+					lhs[lhs_len] = '\0';
+
+					if (!parse_bracket_label(lhs, name, sizeof(name))) {
+						terminal_write("Bad label in mov store.\n");
+						goto fail;
+					}
+
+					const char* rhs = trim_left((char*)comma + 1);
+					if (!streq(rhs, "a")) {
+						terminal_write("Only mov [label], a is supported.\n");
+						goto fail;
+					}
+
+					if (!find_label(labels, label_count, name, &lsec, &loff) || lsec != SHAPE_SEC_DATA) {
+						terminal_write("Unknown data label in mov store.\n");
+						goto fail;
+					}
+
+					uint32_t image_off = code_size + loff;
+
+					// mov [ebx + imm32], eax
+					if (!emit_byte(code, &code_p, code_size, 0x89)) goto emit_fail;
+					if (!emit_byte(code, &code_p, code_size, 0x83)) goto emit_fail;
+					if (!emit_u32_le(code, &code_p, code_size, image_off)) goto emit_fail;
+
 				} else if (starts_with(line, "mov a,")) {
 					int32_t imm;
 					if (!parse_imm(line + 6, &imm)) {
@@ -473,6 +582,29 @@ int shape_asm_to_glm(const char* input_name, const char* output_stem) {
 					}
 					if (!emit_byte(code, &code_p, code_size, 0xB8)) goto emit_fail;
 					if (!emit_u32_le(code, &code_p, code_size, (uint32_t)imm)) goto emit_fail;
+
+				} else if (starts_with(line, "lea a,")) {
+					const char* arg = line + 7;
+					char name[32];
+					shape_sec_t lsec = SHAPE_SEC_NONE;
+					uint32_t loff = 0;
+
+					if (!parse_ident(arg, name, sizeof(name))) {
+						terminal_write("Bad label in lea.\n");
+						goto fail;
+					}
+
+					if (!find_label(labels, label_count, name, &lsec, &loff) || lsec != SHAPE_SEC_DATA) {
+						terminal_write("Unknown data label in lea.\n");
+						goto fail;
+					}
+
+					uint32_t image_off = code_size + loff;
+
+					// lea eax, [ebx + imm32]
+					if (!emit_byte(code, &code_p, code_size, 0x8D)) goto emit_fail;
+					if (!emit_byte(code, &code_p, code_size, 0x83)) goto emit_fail;
+					if (!emit_u32_le(code, &code_p, code_size, image_off)) goto emit_fail;
 				} else if (starts_with(line, "add a,")) {
 					int32_t imm;
 					if (!parse_imm(line + 6, &imm)) {
@@ -572,6 +704,13 @@ int shape_asm_to_glm(const char* input_name, const char* output_stem) {
 					for (size_t i = 0; i < n; i++) {
 						if (!emit_byte(data, &data_p, data_size, tmp[i])) goto emit_fail;
 					}
+				} else if (starts_with(line, "dd ")) {
+					int32_t imm;
+					if (!parse_imm(line + 3, &imm)) {
+						terminal_write("Bad dd immediate.\n");
+						goto fail;
+					}
+					if (!emit_u32_le(data, &data_p, data_size, (uint32_t)imm)) goto emit_fail;
 				} else {
 					terminal_write("Unknown data directive: [");
 					terminal_write(line);

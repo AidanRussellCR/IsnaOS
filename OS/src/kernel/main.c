@@ -11,7 +11,7 @@ void kmain(void) {
 	terminal_init();
 	terminal_write("--- IsnaOS ---\n");
 	terminal_write("Welcome to the land of Myrkthrima!\n");
-	terminal_write("use 'help' for a list of commands.\n---------------\n\n");
+	terminal_write("use 'help' for a list of commands.\n--------------\n\n");
 
 	vga_cursor_hide();
 	vga_cursor_enable();

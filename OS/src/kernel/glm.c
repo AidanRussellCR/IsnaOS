@@ -163,7 +163,7 @@ int glm_load_and_run(const char* filename) {
 	glm_entry_t entry = (glm_entry_t)(image + h->entry_offset);
 
 	terminal_write("Summoning golem...\n");
-	(void)entry(&api);
+	(void)entry(&api, image);
 
 	terminal_write("\nGolem returned.\n");
 

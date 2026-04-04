@@ -31,6 +31,11 @@ yield
 nop
  - Do nothing
 
+loadbase
+ - Loads the current program image base address into register b
+ - Necessary to call for label-based memory access (ex: [label]) as global data is addressed in relation to the global image
+ - Should call loadbase near the start of the program before using lea or mov (with label)
+
 exit
  - Calls the host API exit function (terminates program)
 
@@ -45,12 +50,28 @@ hear
 
 -----------------------------
 
-Arithmetic:
+Memory:
 
 (<imm> is an immediate)
 
 mov a, <imm>
  - Set a
+
+mov a, [label]
+ - Load the contents stored at the data label
+
+mov [label], a
+ - Store the current value in register a into a data label
+
+lea a, <label>
+ - Load the runtime memory address of a data label into register a
+ - Loads address itself, not the value stored in the label
+
+-----------------------------
+
+Arithmetic:
+
+(<imm> is an immediate)
 
 add a, <imm>
  - a + imm
@@ -101,6 +122,13 @@ Data:
 asciz "string"
  - Stores a null-terminated string
  - Supports  \n  \t  \\  and  \"
+
+dd
+ - Stores a 32-bit value
+   - dd 41
+   - dd -4
+   - dd 'C'
+ - Can be used for global integers, constants, or regular variables
 
 
 Comments:
