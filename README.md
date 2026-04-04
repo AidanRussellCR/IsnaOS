@@ -25,4 +25,5 @@ Roadmap:
 
 Interests/Goals that need more research:
  1) Compiler
- 2) Program execution (like a compiled C program rather than a script)
+ 2) Bitmap support within drivers
+ 3) Audio support
