@@ -7,7 +7,7 @@
 #include "drivers/vga.h"
 #include "lib/str.h"
 
-// Shape v2.0
+// Shape v3.0
 
 #define SHAPE_MAX_LABELS 128
 #define SHAPE_MAX_LINE   160
@@ -222,6 +222,44 @@ static int parse_bracket_label(const char* s, char* out, size_t cap) {
 	return i > 0;
 }
 
+static int reg_code_from_name(const char* s, uint8_t* code_out) {
+	if (!s || !s[0] || s[1] != '\0') return 0;
+
+	switch (s[0]) {
+		case 'a': *code_out = 0; return 1; // eax
+		case 'c': *code_out = 1; return 1; // ecx
+		case 'd': *code_out = 2; return 1; // edx
+		case 'b': *code_out = 3; return 1; // ebx
+		default: return 0;
+	}
+}
+
+static int parse_two_operands(const char* s, char* lhs, size_t lhs_cap, char* rhs, size_t rhs_cap) {
+	s = trim_left((char*)s);
+	if (!s[0]) return 0;
+
+	size_t i = 0;
+	while (*s && *s != ',' && i + 1 < lhs_cap) {
+		lhs[i++] = *s++;
+	}
+	lhs[i] = '\0';
+	trim_right(lhs);
+
+	if (*s != ',') return 0;
+	s++;
+
+	s = trim_left((char*)s);
+
+	i = 0;
+	while (*s && i + 1 < rhs_cap) {
+		rhs[i++] = *s++;
+	}
+	rhs[i] = '\0';
+	trim_right(rhs);
+
+	return lhs[0] && rhs[0];
+}
+
 static int emit_u32_le(uint8_t* buf, size_t* p, size_t cap, uint32_t v) {
 	if (*p + 4 > cap) return 0;
 	buf[(*p)++] = (uint8_t)(v & 0xFF);
@@ -237,6 +275,11 @@ static int emit_byte(uint8_t* buf, size_t* p, size_t cap, uint8_t b) {
 	return 1;
 }
 
+static int emit_modrm(uint8_t* buf, size_t* p, size_t cap, uint8_t mod, uint8_t reg, uint8_t rm) {
+	uint8_t v = (uint8_t)(((mod & 0x3) << 6) | ((reg & 0x7) << 3) | (rm & 0x7));
+	return emit_byte(buf, p, cap, v);
+}
+
 static int emit_rel32(uint8_t* buf, size_t* p, size_t cap, int32_t disp) {
 	return emit_u32_le(buf, p, cap, (uint32_t)disp);
 }
@@ -244,31 +287,72 @@ static int emit_rel32(uint8_t* buf, size_t* p, size_t cap, int32_t disp) {
 static int code_size_of(const char* line) {
 	if (streq(line, "ret")) return 1;
 	if (streq(line, "nop")) return 1;
-	if (streq(line, "yield")) return 7;
+	if (streq(line, "yield")) return 3;
+	if (streq(line, "loadapi")) return 4;
 	if (streq(line, "loadbase")) return 4;
-	if (streq(line, "exit")) return 13;
-	if (streq(line, "hear")) return 7;
-	if (streq(line, "show")) return 11;
+	if (streq(line, "exit")) return 9;
+	if (streq(line, "hear")) return 3;
+	if (streq(line, "show")) return 7;
 
-	if (starts_with(line, "speak ")) return 15;
-	if (starts_with(line, "say ")) return 15;
+	if (streq(line, "push a")) return 1;
+	if (streq(line, "pop a")) return 1;
+
+	if (starts_with(line, "speak ")) return 11;
+	if (starts_with(line, "say ")) return 11;
+
+	if (starts_with(line, "push ")) return 5;
+	if (starts_with(line, "call ")) return 5;
 
 	if (starts_with(line, "mov a, [")) return 6;
 	if (starts_with(line, "mov [")) return 6;
-	if (starts_with(line, "mov a,")) return 5;
 	if (starts_with(line, "lea a,")) return 6;
 
-	if (starts_with(line, "add a,")) return 5;
-	if (starts_with(line, "sub a,")) return 5;
+	if (starts_with(line, "mov ")) {
+		char lhs[16], rhs[16];
+		uint8_t r1, r2;
+		if (!parse_two_operands(line + 4, lhs, sizeof(lhs), rhs, sizeof(rhs))) return -1;
+		if (reg_code_from_name(lhs, &r1) && reg_code_from_name(rhs, &r2)) return 2;
+		if (reg_code_from_name(lhs, &r1)) return 5;
+		return -1;
+	}
+
+	if (starts_with(line, "add ")) {
+		char lhs[16], rhs[16];
+		uint8_t r1;
+		if (!parse_two_operands(line + 4, lhs, sizeof(lhs), rhs, sizeof(rhs))) return -1;
+		if (reg_code_from_name(lhs, &r1)) return 6;
+		return -1;
+	}
+
+	if (starts_with(line, "sub ")) {
+		char lhs[16], rhs[16];
+		uint8_t r1;
+		if (!parse_two_operands(line + 4, lhs, sizeof(lhs), rhs, sizeof(rhs))) return -1;
+		if (reg_code_from_name(lhs, &r1)) return 6;
+		return -1;
+	}
+
+	if (starts_with(line, "cmp ")) {
+		char lhs[16], rhs[16];
+		uint8_t r1, r2;
+		if (!parse_two_operands(line + 4, lhs, sizeof(lhs), rhs, sizeof(rhs))) return -1;
+		if (reg_code_from_name(lhs, &r1) && reg_code_from_name(rhs, &r2)) return 2;
+		if (reg_code_from_name(lhs, &r1)) return 6;
+		return -1;
+	}
+
 	if (starts_with(line, "mul a,")) return 6;
 	if (starts_with(line, "div a,")) return 8;
-	if (starts_with(line, "cmp a,")) return 5;
 
 	if (starts_with(line, "jmp ")) return 5;
 	if (starts_with(line, "jz ")) return 6;
 	if (starts_with(line, "jnz ")) return 6;
 	if (starts_with(line, "je ")) return 6;
 	if (starts_with(line, "jne ")) return 6;
+	if (starts_with(line, "jl ")) return 6;
+	if (starts_with(line, "jle ")) return 6;
+	if (starts_with(line, "jg ")) return 6;
+	if (starts_with(line, "jge ")) return 6;
 
 	return -1;
 }
@@ -418,52 +502,53 @@ int shape_asm_to_glm(const char* input_name, const char* output_stem) {
 				} else if (streq(line, "nop")) {
 					if (!emit_byte(code, &code_p, code_size, 0x90)) goto emit_fail;
 				} else if (streq(line, "yield")) {
+					if (!emit_byte(code, &code_p, code_size, 0xFF)) goto emit_fail;
+					if (!emit_byte(code, &code_p, code_size, 0x56)) goto emit_fail;
+					if (!emit_byte(code, &code_p, code_size, 0x08)) goto emit_fail;
+				} else if (streq(line, "loadapi")) {
 					if (!emit_byte(code, &code_p, code_size, 0x8B)) goto emit_fail;
-					if (!emit_byte(code, &code_p, code_size, 0x54)) goto emit_fail;
+					if (!emit_byte(code, &code_p, code_size, 0x74)) goto emit_fail;
 					if (!emit_byte(code, &code_p, code_size, 0x24)) goto emit_fail;
 					if (!emit_byte(code, &code_p, code_size, 0x04)) goto emit_fail;
-					if (!emit_byte(code, &code_p, code_size, 0xFF)) goto emit_fail;
-					if (!emit_byte(code, &code_p, code_size, 0x52)) goto emit_fail;
-					if (!emit_byte(code, &code_p, code_size, 0x08)) goto emit_fail;
 				} else if (streq(line, "loadbase")) {
 					if (!emit_byte(code, &code_p, code_size, 0x8B)) goto emit_fail;
 					if (!emit_byte(code, &code_p, code_size, 0x5C)) goto emit_fail;
 					if (!emit_byte(code, &code_p, code_size, 0x24)) goto emit_fail;
 					if (!emit_byte(code, &code_p, code_size, 0x08)) goto emit_fail;
 				} else if (streq(line, "exit")) {
-					if (!emit_byte(code, &code_p, code_size, 0x8B)) goto emit_fail;
-					if (!emit_byte(code, &code_p, code_size, 0x54)) goto emit_fail;
-					if (!emit_byte(code, &code_p, code_size, 0x24)) goto emit_fail;
-					if (!emit_byte(code, &code_p, code_size, 0x04)) goto emit_fail;
 					if (!emit_byte(code, &code_p, code_size, 0x6A)) goto emit_fail;
 					if (!emit_byte(code, &code_p, code_size, 0x00)) goto emit_fail;
 					if (!emit_byte(code, &code_p, code_size, 0xFF)) goto emit_fail;
-					if (!emit_byte(code, &code_p, code_size, 0x52)) goto emit_fail;
+					if (!emit_byte(code, &code_p, code_size, 0x56)) goto emit_fail;
 					if (!emit_byte(code, &code_p, code_size, 0x10)) goto emit_fail;
 					if (!emit_byte(code, &code_p, code_size, 0x83)) goto emit_fail;
 					if (!emit_byte(code, &code_p, code_size, 0xC4)) goto emit_fail;
 					if (!emit_byte(code, &code_p, code_size, 0x04)) goto emit_fail;
 					if (!emit_byte(code, &code_p, code_size, 0xC3)) goto emit_fail;
 				} else if (streq(line, "hear")) {
-					if (!emit_byte(code, &code_p, code_size, 0x8B)) goto emit_fail;
-					if (!emit_byte(code, &code_p, code_size, 0x54)) goto emit_fail;
-					if (!emit_byte(code, &code_p, code_size, 0x24)) goto emit_fail;
-					if (!emit_byte(code, &code_p, code_size, 0x04)) goto emit_fail;
 					if (!emit_byte(code, &code_p, code_size, 0xFF)) goto emit_fail;
-					if (!emit_byte(code, &code_p, code_size, 0x52)) goto emit_fail;
+					if (!emit_byte(code, &code_p, code_size, 0x56)) goto emit_fail;
 					if (!emit_byte(code, &code_p, code_size, 0x14)) goto emit_fail;
 				} else if (streq(line, "show")) {
-					if (!emit_byte(code, &code_p, code_size, 0x8B)) goto emit_fail;
-					if (!emit_byte(code, &code_p, code_size, 0x54)) goto emit_fail;
-					if (!emit_byte(code, &code_p, code_size, 0x24)) goto emit_fail;
-					if (!emit_byte(code, &code_p, code_size, 0x04)) goto emit_fail;
 					if (!emit_byte(code, &code_p, code_size, 0x50)) goto emit_fail;
 					if (!emit_byte(code, &code_p, code_size, 0xFF)) goto emit_fail;
-					if (!emit_byte(code, &code_p, code_size, 0x52)) goto emit_fail;
+					if (!emit_byte(code, &code_p, code_size, 0x56)) goto emit_fail;
 					if (!emit_byte(code, &code_p, code_size, 0x18)) goto emit_fail;
 					if (!emit_byte(code, &code_p, code_size, 0x83)) goto emit_fail;
 					if (!emit_byte(code, &code_p, code_size, 0xC4)) goto emit_fail;
 					if (!emit_byte(code, &code_p, code_size, 0x04)) goto emit_fail;
+				} else if (streq(line, "push a")) {
+					if (!emit_byte(code, &code_p, code_size, 0x50)) goto emit_fail;
+				} else if (streq(line, "pop a")) {
+					if (!emit_byte(code, &code_p, code_size, 0x58)) goto emit_fail;
+				} else if (starts_with(line, "push ")) {
+					int32_t imm;
+					if (!parse_imm(line + 5, &imm)) {
+						terminal_write("Bad immediate in push.\n");
+						goto fail;
+					}
+					if (!emit_byte(code, &code_p, code_size, 0x68)) goto emit_fail;
+					if (!emit_u32_le(code, &code_p, code_size, (uint32_t)imm)) goto emit_fail;
 				} else if (starts_with(line, "speak ") || starts_with(line, "say ")) {
 					const char* arg = starts_with(line, "speak ") ? line + 6 : line + 4;
 					char name[32];
@@ -483,20 +568,15 @@ int shape_asm_to_glm(const char* input_name, const char* output_stem) {
 					uint32_t image_off = code_size + loff;
 
 					/* 
-					mov eax,[esp+4]
 					push imm32(data_offset)
 					call dword ptr [eax+12]
 					add esp,4
 					*/
 					
-					if (!emit_byte(code, &code_p, code_size, 0x8B)) goto emit_fail;
-					if (!emit_byte(code, &code_p, code_size, 0x54)) goto emit_fail;
-					if (!emit_byte(code, &code_p, code_size, 0x24)) goto emit_fail;
-					if (!emit_byte(code, &code_p, code_size, 0x04)) goto emit_fail;
 					if (!emit_byte(code, &code_p, code_size, 0x68)) goto emit_fail;
 					if (!emit_u32_le(code, &code_p, code_size, image_off)) goto emit_fail;
 					if (!emit_byte(code, &code_p, code_size, 0xFF)) goto emit_fail;
-					if (!emit_byte(code, &code_p, code_size, 0x52)) goto emit_fail;
+					if (!emit_byte(code, &code_p, code_size, 0x56)) goto emit_fail;
 					if (!emit_byte(code, &code_p, code_size, 0x0C)) goto emit_fail;
 					if (!emit_byte(code, &code_p, code_size, 0x83)) goto emit_fail;
 					if (!emit_byte(code, &code_p, code_size, 0xC4)) goto emit_fail;
@@ -574,14 +654,32 @@ int shape_asm_to_glm(const char* input_name, const char* output_stem) {
 					if (!emit_byte(code, &code_p, code_size, 0x83)) goto emit_fail;
 					if (!emit_u32_le(code, &code_p, code_size, image_off)) goto emit_fail;
 
-				} else if (starts_with(line, "mov a,")) {
+				} else if (starts_with(line, "mov ")) {
+					char lhs[16], rhs[16];
+					uint8_t rdst, rsrc;
 					int32_t imm;
-					if (!parse_imm(line + 6, &imm)) {
-						terminal_write("Bad immediate in mov.\n");
+
+					if (!parse_two_operands(line + 4, lhs, sizeof(lhs), rhs, sizeof(rhs))) {
+						terminal_write("Bad mov syntax.\n");
 						goto fail;
 					}
-					if (!emit_byte(code, &code_p, code_size, 0xB8)) goto emit_fail;
-					if (!emit_u32_le(code, &code_p, code_size, (uint32_t)imm)) goto emit_fail;
+
+					if (!reg_code_from_name(lhs, &rdst)) {
+						terminal_write("Bad destination register in mov.\n");
+						goto fail;
+					}
+
+					if (reg_code_from_name(rhs, &rsrc)) {
+						if (!emit_byte(code, &code_p, code_size, 0x89)) goto emit_fail;
+						if (!emit_modrm(code, &code_p, code_size, 3, rsrc, rdst)) goto emit_fail;
+					} else {
+						if (!parse_imm(rhs, &imm)) {
+							terminal_write("Bad source in mov.\n");
+							goto fail;
+						}
+						if (!emit_byte(code, &code_p, code_size, (uint8_t)(0xB8 + rdst))) goto emit_fail;
+						if (!emit_u32_le(code, &code_p, code_size, (uint32_t)imm)) goto emit_fail;
+					}
 
 				} else if (starts_with(line, "lea a,")) {
 					const char* arg = line + 7;
@@ -605,21 +703,47 @@ int shape_asm_to_glm(const char* input_name, const char* output_stem) {
 					if (!emit_byte(code, &code_p, code_size, 0x8D)) goto emit_fail;
 					if (!emit_byte(code, &code_p, code_size, 0x83)) goto emit_fail;
 					if (!emit_u32_le(code, &code_p, code_size, image_off)) goto emit_fail;
-				} else if (starts_with(line, "add a,")) {
+				} else if (starts_with(line, "add ")) {
+					char lhs[16], rhs[16];
+					uint8_t rdst;
 					int32_t imm;
-					if (!parse_imm(line + 6, &imm)) {
+
+					if (!parse_two_operands(line + 4, lhs, sizeof(lhs), rhs, sizeof(rhs))) {
+						terminal_write("Bad add syntax.\n");
+						goto fail;
+					}
+					if (!reg_code_from_name(lhs, &rdst)) {
+						terminal_write("Bad destination register in add.\n");
+						goto fail;
+					}
+					if (!parse_imm(rhs, &imm)) {
 						terminal_write("Bad immediate in add.\n");
 						goto fail;
 					}
-					if (!emit_byte(code, &code_p, code_size, 0x05)) goto emit_fail;
+
+					if (!emit_byte(code, &code_p, code_size, 0x81)) goto emit_fail;
+					if (!emit_modrm(code, &code_p, code_size, 3, 0, rdst)) goto emit_fail;
 					if (!emit_u32_le(code, &code_p, code_size, (uint32_t)imm)) goto emit_fail;
-				} else if (starts_with(line, "sub a,")) {
+				} else if (starts_with(line, "sub ")) {
+					char lhs[16], rhs[16];
+					uint8_t rdst;
 					int32_t imm;
-					if (!parse_imm(line + 6, &imm)) {
+
+					if (!parse_two_operands(line + 4, lhs, sizeof(lhs), rhs, sizeof(rhs))) {
+						terminal_write("Bad sub syntax.\n");
+						goto fail;
+					}
+					if (!reg_code_from_name(lhs, &rdst)) {
+						terminal_write("Bad destination register in sub.\n");
+						goto fail;
+					}
+					if (!parse_imm(rhs, &imm)) {
 						terminal_write("Bad immediate in sub.\n");
 						goto fail;
 					}
-					if (!emit_byte(code, &code_p, code_size, 0x2D)) goto emit_fail;
+
+					if (!emit_byte(code, &code_p, code_size, 0x81)) goto emit_fail;
+					if (!emit_modrm(code, &code_p, code_size, 3, 5, rdst)) goto emit_fail;
 					if (!emit_u32_le(code, &code_p, code_size, (uint32_t)imm)) goto emit_fail;
 				} else if (starts_with(line, "mul a,")) {
 					int32_t imm;
@@ -641,26 +765,70 @@ int shape_asm_to_glm(const char* input_name, const char* output_stem) {
 					if (!emit_u32_le(code, &code_p, code_size, (uint32_t)imm)) goto emit_fail;
 					if (!emit_byte(code, &code_p, code_size, 0xF7)) goto emit_fail; /* idiv ecx */
 					if (!emit_byte(code, &code_p, code_size, 0xF9)) goto emit_fail;
-				} else if (starts_with(line, "cmp a,")) {
+				} else if (starts_with(line, "cmp ")) {
+					char lhs[16], rhs[16];
+					uint8_t r1, r2;
 					int32_t imm;
-					if (!parse_imm(line + 6, &imm)) {
-						terminal_write("Bad immediate in cmp.\n");
+
+					if (!parse_two_operands(line + 4, lhs, sizeof(lhs), rhs, sizeof(rhs))) {
+						terminal_write("Bad cmp syntax.\n");
 						goto fail;
 					}
-					if (!emit_byte(code, &code_p, code_size, 0x3D)) goto emit_fail;
-					if (!emit_u32_le(code, &code_p, code_size, (uint32_t)imm)) goto emit_fail;
+					if (!reg_code_from_name(lhs, &r1)) {
+						terminal_write("Bad left register in cmp.\n");
+						goto fail;
+					}
+
+					if (reg_code_from_name(rhs, &r2)) {
+						if (!emit_byte(code, &code_p, code_size, 0x39)) goto emit_fail;
+						if (!emit_modrm(code, &code_p, code_size, 3, r2, r1)) goto emit_fail;
+					} else {
+						if (!parse_imm(rhs, &imm)) {
+							terminal_write("Bad right operand in cmp.\n");
+							goto fail;
+						}
+
+						if (!emit_byte(code, &code_p, code_size, 0x81)) goto emit_fail;
+						if (!emit_modrm(code, &code_p, code_size, 3, 7, r1)) goto emit_fail;
+						if (!emit_u32_le(code, &code_p, code_size, (uint32_t)imm)) goto emit_fail;
+					}
+				} else if (starts_with(line, "call ")) {
+					const char* arg = line + 5;
+					char name[32];
+					shape_sec_t lsec = SHAPE_SEC_NONE;
+					uint32_t loff = 0;
+
+					if (!parse_ident(arg, name, sizeof(name))) {
+						terminal_write("Bad call target.\n");
+						goto fail;
+					}
+					if (!find_label(labels, label_count, name, &lsec, &loff) || lsec != SHAPE_SEC_CODE) {
+						terminal_write("Unknown code label in call.\n");
+						goto fail;
+					}
+
+					int32_t disp = (int32_t)loff - (int32_t)(cur_off + 5);
+
+					if (!emit_byte(code, &code_p, code_size, 0xE8)) goto emit_fail;
+					if (!emit_rel32(code, &code_p, code_size, disp)) goto emit_fail;
 				} else if (starts_with(line, "jmp ") || starts_with(line, "jz ") ||
 				           starts_with(line, "jnz ") || starts_with(line, "je ") ||
-				           starts_with(line, "jne ")) {
+				           starts_with(line, "jne ") || starts_with(line, "jl ") ||
+				           starts_with(line, "jle ") || starts_with(line, "jg ") ||
+				           starts_with(line, "jge ")) {
 					const char* arg;
 					int instr_size = 0;
-					int cond = 0; // 0=jmp, 1=jz/je, 2=jnz/jne
+					int cond = 0; // 0=jmp, 1=jz/je, 2=jnz/jne, 3=jl, 4=jle, 5=jg, 6=jge
 
 					if (starts_with(line, "jmp ")) { arg = line + 4; instr_size = 5; cond = 0; }
 					else if (starts_with(line, "jz ")) { arg = line + 3; instr_size = 6; cond = 1; }
 					else if (starts_with(line, "je ")) { arg = line + 3; instr_size = 6; cond = 1; }
 					else if (starts_with(line, "jnz ")) { arg = line + 4; instr_size = 6; cond = 2; }
-					else { arg = line + 4; instr_size = 6; cond = 2; }
+					else if (starts_with(line, "jne ")) { arg = line + 4; instr_size = 6; cond = 2; }
+					else if (starts_with(line, "jl ")) { arg = line + 3; instr_size = 6; cond = 3; }
+					else if (starts_with(line, "jle ")) { arg = line + 4; instr_size = 6; cond = 4; }
+					else if (starts_with(line, "jg ")) { arg = line + 3; instr_size = 6; cond = 5; }
+					else { arg = line + 4; instr_size = 6; cond = 6; }
 
 					char name[32];
 					shape_sec_t lsec = SHAPE_SEC_NONE;
@@ -680,13 +848,23 @@ int shape_asm_to_glm(const char* input_name, const char* output_stem) {
 					if (cond == 0) {
 						if (!emit_byte(code, &code_p, code_size, 0xE9)) goto emit_fail;
 						if (!emit_rel32(code, &code_p, code_size, disp)) goto emit_fail;
-					} else if (cond == 1) {
-						if (!emit_byte(code, &code_p, code_size, 0x0F)) goto emit_fail;
-						if (!emit_byte(code, &code_p, code_size, 0x84)) goto emit_fail;
-						if (!emit_rel32(code, &code_p, code_size, disp)) goto emit_fail;
 					} else {
 						if (!emit_byte(code, &code_p, code_size, 0x0F)) goto emit_fail;
-						if (!emit_byte(code, &code_p, code_size, 0x85)) goto emit_fail;
+
+						if (cond == 1) {
+							if (!emit_byte(code, &code_p, code_size, 0x84)) goto emit_fail; // JE
+						} else if (cond == 2) {
+							if (!emit_byte(code, &code_p, code_size, 0x85)) goto emit_fail; // JNE
+						} else if (cond == 3) {
+							if (!emit_byte(code, &code_p, code_size, 0x8C)) goto emit_fail; // JL
+						} else if (cond == 4) {
+							if (!emit_byte(code, &code_p, code_size, 0x8E)) goto emit_fail; // JLE
+						} else if (cond == 5) {
+							if (!emit_byte(code, &code_p, code_size, 0x8F)) goto emit_fail; // JG
+						} else {
+							if (!emit_byte(code, &code_p, code_size, 0x8D)) goto emit_fail; // JGE
+						}
+
 						if (!emit_rel32(code, &code_p, code_size, disp)) goto emit_fail;
 					}
 				} else {

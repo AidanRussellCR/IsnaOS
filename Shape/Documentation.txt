@@ -20,16 +20,34 @@ loop:
 
 -----------------------------
 
+Registers:
+
+Shape |  x86   | Purpose
+ a    |   eax  |  main register
+ b    |   ebx  |  image base (after loadbase)
+ c    |   ecx  |  general purpose
+ d    |   edx  |  general purpose
+ ---  |   esi  |  API pointer (after loadapi)
+
+!!!
+ - Do not overwrite b after calling loadbase
+ - Do not overwrite esi, as it is used for API calls
+
+-----------------------------
+
 Instructions:
 
 ret
- - Return call within the program (not much use yet)
+ - Return call within the program
 
 yield
  - Calls the host API yield function
 
 nop
  - Do nothing
+
+loadapi
+ - Loads the API pointer into the internal register
 
 loadbase
  - Loads the current program image base address into register b
@@ -55,7 +73,8 @@ Memory:
 (<imm> is an immediate)
 
 mov a, <imm>
- - Set a
+ - Set a, c, d
+ - Supports other registers (a, c, d)
 
 mov a, [label]
  - Load the contents stored at the data label
@@ -75,9 +94,11 @@ Arithmetic:
 
 add a, <imm>
  - a + imm
+ - Supports other registers (a, c, d)
 
 sub a, <imm>
  - a - imm
+ - Supports other registers (a, c, d)
 
 mul a, <imm>
  - a * imm
@@ -85,8 +106,9 @@ mul a, <imm>
 div a, <imm>
  - a / imm
 
-cmp a, <imm>
- - Compare a to imm
+cmp a, <imm or reg>
+ - Compare a to imm or another register
+ - Supports other registers (a, c, d)
 
 
 Immediates can be integers or character literals
@@ -115,6 +137,37 @@ je <label>
 jne <label>
  - Jump if not equal
 
+jl <label>
+ - Jump if less then
+
+jle <label>
+ - Jump if less than or equal
+
+jg <label>
+ - Jump if greater than
+
+jge <label>
+ - Jump if greater than or equal
+
+-----------------------------
+
+Stack Operations:
+
+push a
+pop a
+
+push <imm>
+
+-----------------------------
+
+Function Calls:
+
+call funct
+
+funct:
+    ; function
+    ret
+
 -----------------------------
 
 Data:
@@ -141,7 +194,7 @@ Requirements:
 
  - Code must contain an entry label (entry:) within .code
  - speak must refer to a .data label
-
+ - Must call loadapi to use API, loadbase to use program image
 
 -----------------------------
 

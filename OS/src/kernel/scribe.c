@@ -216,25 +216,73 @@ static void scribe_draw_gutter(size_t row, size_t line_no) {
 	}
 }
 
-static void scribe_draw_text(scribe_t* ed) {
-	for (size_t vr = 0; vr < SCRIBE_TEXT_ROWS; vr++) {
-		terminal_clear_row(vr);
+static void scribe_place_cursor(scribe_t* ed) {
+	size_t screen_row = ed->cur_line - ed->top_line;
+	size_t screen_col = SCRIBE_TEXT_COL0 + ed->cur_col;
 
-		size_t line_index = ed->top_line + vr;
+	if (screen_row >= SCRIBE_TEXT_ROWS) screen_row = SCRIBE_TEXT_ROWS - 1;
+	if (screen_col >= TEXT_WIDTH) screen_col = TEXT_WIDTH - 1;
 
-		if (line_index < ed->line_count) {
-			scribe_draw_gutter(vr, line_index + 1);
+	terminal_set_cursor_pos(screen_row, screen_col);
+}
 
-			const char* line = ed->lines[line_index];
-			if (line) {
-				terminal_write_at(vr, SCRIBE_TEXT_COL0, line);
-			}
-		} else {
-			for (size_t i = 0; i < SCRIBE_GUTTER_WIDTH; i++) {
-				terminal_putentry_at(vr, i, ' ', SCRIBE_GUTTER_COLOR);
-			}
+static void scribe_draw_text_row(scribe_t* ed, size_t vr) {
+	terminal_clear_row(vr);
+
+	size_t line_index = ed->top_line + vr;
+
+	if (line_index < ed->line_count) {
+		scribe_draw_gutter(vr, line_index + 1);
+
+		const char* line = ed->lines[line_index];
+		if (line) {
+			terminal_write_at(vr, SCRIBE_TEXT_COL0, line);
+		}
+	} else {
+		for (size_t i = 0; i < SCRIBE_GUTTER_WIDTH; i++) {
+			terminal_putentry_at(vr, i, ' ', SCRIBE_GUTTER_COLOR);
 		}
 	}
+}
+
+static void scribe_draw_text(scribe_t* ed) {
+	for (size_t vr = 0; vr < SCRIBE_TEXT_ROWS; vr++) {
+		scribe_draw_text_row(ed, vr);
+	}
+}
+
+static void scribe_render_current_line(scribe_t* ed) {
+	scribe_keep_cursor_visible(ed);
+
+	size_t vr = ed->cur_line - ed->top_line;
+	if (vr < SCRIBE_TEXT_ROWS) {
+		scribe_draw_text_row(ed, vr);
+	}
+
+	scribe_draw_status(ed);
+	scribe_place_cursor(ed);
+}
+
+static void scribe_render_from_line(scribe_t* ed, size_t line_index) {
+	scribe_keep_cursor_visible(ed);
+
+	if (line_index < ed->top_line) line_index = ed->top_line;
+
+	size_t vr_start = line_index - ed->top_line;
+	if (vr_start >= SCRIBE_TEXT_ROWS) {
+		scribe_draw_status(ed);
+		scribe_draw_command(ed);
+		scribe_place_cursor(ed);
+		return;
+	}
+
+	for (size_t vr = vr_start; vr < SCRIBE_TEXT_ROWS; vr++) {
+		scribe_draw_text_row(ed, vr);
+	}
+
+	scribe_draw_status(ed);
+	scribe_draw_command(ed);
+	scribe_place_cursor(ed);
 }
 
 static void scribe_render(scribe_t* ed) {
@@ -242,13 +290,7 @@ static void scribe_render(scribe_t* ed) {
 	scribe_draw_text(ed);
 	scribe_draw_status(ed);
 	scribe_draw_command(ed);
-
-	size_t screen_row = ed->cur_line - ed->top_line;
-	size_t screen_col = SCRIBE_TEXT_COL0 + ed->cur_col;
-	if (screen_row >= SCRIBE_TEXT_ROWS) screen_row = SCRIBE_TEXT_ROWS - 1;
-	if (screen_col >= TEXT_WIDTH) screen_col = TEXT_WIDTH - 1;
-
-	terminal_set_cursor_pos(screen_row, screen_col);
+	scribe_place_cursor(ed);
 }
 
 static int scribe_insert_line(scribe_t* ed, size_t index, char* line) {
@@ -627,52 +669,144 @@ void scribe_open(const char* filename) {
 			continue;
 		}
 
-		needs_redraw = 1;
-
 		if (ed.mode == SCRIBE_MODE_WRITE) {
+			size_t old_line = ed.cur_line;
+			size_t old_top = ed.top_line;
 			size_t line_len = scribe_strlen(ed.lines[ed.cur_line]);
 
 			if (ev.type == KEY_LEFT) {
-				if (ed.cur_col > 0) ed.cur_col--;
-				else if (ed.cur_line > 0) {
+				if (ed.cur_col > 0) {
+					ed.cur_col--;
+				} else if (ed.cur_line > 0) {
 					ed.cur_line--;
 					ed.cur_col = scribe_strlen(ed.lines[ed.cur_line]);
 				}
+
+				scribe_keep_cursor_visible(&ed);
+				if (ed.top_line != old_top) needs_redraw = 1;
+				else {
+					scribe_draw_status(&ed);
+					scribe_place_cursor(&ed);
+				}
 			} else if (ev.type == KEY_RIGHT) {
-				if (ed.cur_col < line_len) ed.cur_col++;
-				else if (ed.cur_line + 1 < ed.line_count) {
+				if (ed.cur_col < line_len) {
+					ed.cur_col++;
+				} else if (ed.cur_line + 1 < ed.line_count) {
 					ed.cur_line++;
 					ed.cur_col = 0;
+				}
+
+				scribe_keep_cursor_visible(&ed);
+				if (ed.top_line != old_top) needs_redraw = 1;
+				else {
+					scribe_draw_status(&ed);
+					scribe_place_cursor(&ed);
 				}
 			} else if (ev.type == KEY_UP) {
 				if (ed.cur_line > 0) ed.cur_line--;
 				line_len = scribe_strlen(ed.lines[ed.cur_line]);
 				if (ed.cur_col > line_len) ed.cur_col = line_len;
+
+				scribe_keep_cursor_visible(&ed);
+				if (ed.top_line != old_top) needs_redraw = 1;
+				else {
+					scribe_draw_status(&ed);
+					scribe_place_cursor(&ed);
+				}
 			} else if (ev.type == KEY_DOWN) {
 				if (ed.cur_line + 1 < ed.line_count) ed.cur_line++;
 				line_len = scribe_strlen(ed.lines[ed.cur_line]);
 				if (ed.cur_col > line_len) ed.cur_col = line_len;
+
+				scribe_keep_cursor_visible(&ed);
+				if (ed.top_line != old_top) needs_redraw = 1;
+				else {
+					scribe_draw_status(&ed);
+					scribe_place_cursor(&ed);
+				}
 			} else if (ev.type == KEY_BACKSPACE) {
-				if (!scribe_backspace(&ed)) scribe_set_message(&ed, "Out of memory.");
+				int merge_case = (ed.cur_col == 0 && ed.cur_line > 0);
+
+				if (!scribe_backspace(&ed)) {
+					scribe_set_message(&ed, "Out of memory.");
+					scribe_draw_status(&ed);
+					scribe_place_cursor(&ed);
+				} else {
+					scribe_keep_cursor_visible(&ed);
+
+					if (ed.top_line != old_top) {
+						needs_redraw = 1;
+					} else if (merge_case) {
+						size_t redraw_from = (old_line > 0) ? (old_line - 1) : 0;
+						scribe_render_from_line(&ed, redraw_from);
+					} else {
+						scribe_render_current_line(&ed);
+					}
+				}
 			} else if (ev.type == KEY_DELETE) {
-				if (!scribe_delete_char(&ed)) scribe_set_message(&ed, "Out of memory.");
+				int merge_case = (ed.cur_col >= line_len && ed.cur_line + 1 < ed.line_count);
+
+				if (!scribe_delete_char(&ed)) {
+					scribe_set_message(&ed, "Out of memory.");
+					scribe_draw_status(&ed);
+					scribe_place_cursor(&ed);
+				} else {
+					scribe_keep_cursor_visible(&ed);
+
+					if (ed.top_line != old_top) {
+						needs_redraw = 1;
+					} else if (merge_case) {
+						scribe_render_from_line(&ed, old_line);
+					} else {
+						scribe_render_current_line(&ed);
+					}
+				}
 			} else if (ev.type == KEY_ENTER) {
-				if (!scribe_split_line(&ed)) scribe_set_message(&ed, "Out of memory.");
+				if (!scribe_split_line(&ed)) {
+					scribe_set_message(&ed, "Out of memory.");
+					scribe_draw_status(&ed);
+					scribe_place_cursor(&ed);
+				} else {
+					scribe_keep_cursor_visible(&ed);
+
+					if (ed.top_line != old_top) needs_redraw = 1;
+					else scribe_render_from_line(&ed, old_line);
+				}
 			} else if (ev.type == KEY_CHAR) {
 				if (ev.ch == '\t') {
+					int ok = 1;
 					for (int i = 0; i < 4; i++) {
 						if (!scribe_insert_char(&ed, ' ')) {
+							ok = 0;
 							scribe_set_message(&ed, "Out of memory.");
 							break;
 						}
 					}
+
+					scribe_keep_cursor_visible(&ed);
+					if (ed.top_line != old_top) needs_redraw = 1;
+					else if (ok) scribe_render_current_line(&ed);
+					else {
+						scribe_draw_status(&ed);
+						scribe_place_cursor(&ed);
+					}
 				} else {
-					if (!scribe_insert_char(&ed, ev.ch)) scribe_set_message(&ed, "Out of memory.");
+					if (!scribe_insert_char(&ed, ev.ch)) {
+						scribe_set_message(&ed, "Out of memory.");
+						scribe_draw_status(&ed);
+						scribe_place_cursor(&ed);
+					} else {
+						scribe_keep_cursor_visible(&ed);
+						if (ed.top_line != old_top) needs_redraw = 1;
+						else scribe_render_current_line(&ed);
+					}
 				}
 			} else if (ev.type == KEY_PAGEUP) {
 				if (ed.top_line > 0) ed.top_line--;
+				needs_redraw = 1;
 			} else if (ev.type == KEY_PAGEDOWN) {
 				if (ed.top_line + SCRIBE_TEXT_ROWS < ed.line_count) ed.top_line++;
+				needs_redraw = 1;
 			} else if (ev.type == KEY_NONE) {
 				// do nothing
 			} else {
@@ -683,6 +817,7 @@ void scribe_open(const char* filename) {
 			if (ev.type == KEY_ESC) {
 				ed.mode = SCRIBE_MODE_COMMAND;
 				scribe_set_message(&ed, "[COMMAND] i=write w=save q=quit x=save+quit /=search g=goto");
+				needs_redraw = 1;
 			}
 
 		} else {
@@ -690,22 +825,28 @@ void scribe_open(const char* filename) {
 				if (ev.ch == 'i') {
 					ed.mode = SCRIBE_MODE_WRITE;
 					scribe_set_message(&ed, "WRITE mode  |  Esc=COMMAND");
+					needs_redraw = 1;
 				} else if (ev.ch == 'w') {
 					if (!scribe_save(&ed)) scribe_set_message(&ed, "Save failed.");
+					needs_redraw = 1;
 				} else if (ev.ch == 'q') {
 					if (ed.modified) {
 						if (scribe_confirm_quit()) break;
 						scribe_set_message(&ed, "Quit canceled.");
+						needs_redraw = 1;
 					} else {
 						break;
 					}
 				} else if (ev.ch == 'x') {
 					if (scribe_save(&ed)) break;
 					else scribe_set_message(&ed, "Save failed.");
+					needs_redraw = 1;
 				} else if (ev.ch == '/') {
 					scribe_search(&ed);
+					needs_redraw = 1;
 				} else if (ev.ch == 'g') {
 					scribe_goto(&ed);
+					needs_redraw = 1;
 				}
 			}
 		}
