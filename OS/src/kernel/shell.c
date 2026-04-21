@@ -14,6 +14,8 @@
 #include "arsc/i386/ports.h"
 #include "fs/vfs.h"
 #include "mm/heap.h"
+#include "kernel/glyph.h"
+#include "kernel/sigildraw.h"
 
 #define HISTORY_MAX 32
 #define SCRIPT_DEPTH_MAX 4
@@ -407,6 +409,8 @@ static void shell_execute_command(const char* buf, int from_script, int depth) {
 		terminal_write("  spawn hb1               - spawn heartbeat type 1\n");
 		terminal_write("  summon <file.glm>       - load and run golem binary\n");
 		terminal_write("  shape <in.asm> <out>    - assemble source into out.glm\n");
+		terminal_write("  glyph <file.rune>       - view rune bitmap\n");
+		terminal_write("  sigildraw <file.rune>   - edit rune bitmap\n");
 		terminal_write("  yield                   - yield scheduler\n");
 		terminal_write("  sync                    - save filesystem to disk\n");
 		terminal_write("  exit                    - save and shut down\n");
@@ -570,6 +574,10 @@ static void shell_execute_command(const char* buf, int from_script, int depth) {
 			}
       		}
       		if (vfs_is_dirty()) vfs_save();
+		} else if (starts_with(buf, "glyph ")) {
+			glyph_view(buf + 6);
+		} else if (starts_with(buf, "sigildraw ")) {
+			sigildraw_open(buf + 10);
       	} else if (starts_with(buf, "scribe ")) {
 		scribe_open(buf + 7);
       	} else if (starts_with(buf, "burn ")) {
