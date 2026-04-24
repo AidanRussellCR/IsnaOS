@@ -4,6 +4,7 @@
 #include "drivers/vga.h"
 #include "drivers/keyboard.h"
 #include "kernel/sched.h"
+#include "kernel/janus.h"
 #include "lib/str.h"
 #include "fs/vfs.h"
 #include "mm/heap.h"
@@ -514,7 +515,7 @@ static void scribe_prompt_line(const char* prompt, char* out, size_t cap) {
 		}
 
 		key_event_t ev;
-		if (!keyboard_try_get_key(&ev)) {
+		if (!janus_try_get_key(&ev)) {
 			yield();
 			continue;
 		}
@@ -547,7 +548,7 @@ static int scribe_confirm_quit(void) {
 		terminal_set_cursor_pos(SCRIBE_CMD_ROW, 29);
 
 		key_event_t ev;
-		if (!keyboard_try_get_key(&ev)) {
+		if (!janus_try_get_key(&ev)) {
 			yield();
 			continue;
 		}
@@ -658,13 +659,20 @@ void scribe_open(const char* filename) {
 	int needs_redraw = 1;
 
 	for (;;) {
+		key_event_t ev;
+
 		if (needs_redraw) {
 			scribe_render(&ed);
 			needs_redraw = 0;
 		}
 
-		key_event_t ev;
-		if (!keyboard_try_get_key(&ev)) {
+		if (janus_consume_focus_event()) {
+			terminal_clear_text_area();
+			needs_redraw = 1;
+			continue;
+		}
+
+		if (!janus_try_get_key(&ev)) {
 			yield();
 			continue;
 		}

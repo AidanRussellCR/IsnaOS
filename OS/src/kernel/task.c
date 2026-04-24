@@ -2,6 +2,7 @@
 #include <stddef.h>
 #include "kernel/task.h"
 #include "kernel/sched.h"
+#include "kernel/janus.h"
 #include "drivers/vga.h"
 #include "lib/str.h"
 #include "mm/heap.h"
@@ -85,6 +86,7 @@ static void cleanup_task_slot(int id) {
 	if (!t) return;
 
 	overlays_hb_remove(id);
+	janus_forget_task(id);
 
 	kfree(t->kstack_base);
 	kfree(t);
@@ -107,6 +109,10 @@ int task_kill(int id) {
 }
 
 void task_exit(void) {
+	int id = g_current;
+	if (id >= 0 && id < MAX_TASKS && g_tasks[id]) {
+		g_tasks[id]->state = TASK_ZOMBIE;
+	}
 	for (;;) yield();
 }
 

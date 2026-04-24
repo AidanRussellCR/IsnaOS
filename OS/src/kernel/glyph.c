@@ -1,6 +1,7 @@
 #include <stddef.h>
 #include <stdint.h>
 #include "kernel/glyph.h"
+#include "kernel/janus.h"
 #include "ui/rune.h"
 #include "ui/glyphforge.h"
 #include "drivers/vga.h"
@@ -10,7 +11,7 @@
 static void glyph_wait_for_key(void) {
     for (;;) {
         key_event_t ev;
-        if (!keyboard_try_get_key(&ev)) {
+        if (!janus_try_get_key(&ev)) {
             yield();
             continue;
         }

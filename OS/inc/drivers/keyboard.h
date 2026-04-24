@@ -13,7 +13,16 @@ typedef enum {
 	KEY_DOWN,
 	KEY_PAGEUP,
 	KEY_PAGEDOWN,
-	KEY_DELETE
+	KEY_DELETE,
+	KEY_F1,
+	KEY_F2,
+	KEY_F3,
+	KEY_F4,
+	// For Janus
+	KEY_ALT_F1,
+	KEY_ALT_F2,
+	KEY_ALT_F3,
+	KEY_ALT_F4
 } key_type_t;
 
 typedef struct {

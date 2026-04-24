@@ -7,6 +7,7 @@
 #include "kernel/sched.h"
 #include "kernel/scribe.h"
 #include "kernel/task.h"
+#include "kernel/janus.h"
 #include "kernel/glm.h"
 #include "kernel/shape.h"
 #include "lib/str.h"
@@ -29,6 +30,9 @@ static void vfs_print_status(vfs_status_t st);
 static int split_next_line(const char** p, char* out, size_t cap);
 static void shell_execute_command(const char* buf, int from_script, int depth);
 static void shell_cast_script(const char* filename, int depth);
+
+static int g_shell_restart_prompt = 0;
+static int g_shell_welcome_printed = 0;
 
 static void prompt(void) {
 	char path[96];
@@ -189,7 +193,14 @@ static char* read_line(void) {
 	for (;;) {
 		key_event_t ev;
 
-		if (!keyboard_try_get_key(&ev)) {
+		if (janus_consume_focus_event()) {
+			terminal_clear_text_area();
+			g_shell_restart_prompt = 1;
+			kfree(buf);
+			return 0;
+		}
+
+		if (!janus_try_get_key(&ev)) {
 			yield();
 			continue;
 		}
@@ -300,7 +311,7 @@ static char* read_line(void) {
 static char read_yes_no(void) {
 	for (;;) {
 		key_event_t ev;
-		if (!keyboard_try_get_key(&ev)) { yield(); continue; }
+		if (!janus_try_get_key(&ev)) { yield(); continue; }
 		if (ev.type == KEY_CHAR) {
 			char c = ev.ch;
 			if (c >= 'A' && c <= 'Z') c = (char)(c - 'A' + 'a');
@@ -316,7 +327,7 @@ static char read_yes_no(void) {
 static char read_warp_choice(void) {
 	for (;;) {
 		key_event_t ev;
-		if (!keyboard_try_get_key(&ev)) { yield(); continue; }
+		if (!janus_try_get_key(&ev)) { yield(); continue; }
 
 		if (ev.type == KEY_CHAR) {
 			char c = ev.ch;
@@ -405,6 +416,11 @@ static void shell_execute_command(const char* buf, int from_script, int depth) {
 		terminal_write("  chant <text>            - print text to terminal\n");
 		terminal_write("  ps                      - list running tasks\n");
 		terminal_write("  kill <id>               - mark a task for reaping\n");
+		terminal_write("  janus                   - list focused applications\n");
+		terminal_write("  janus next              - switch focus to next application\n");
+		terminal_write("  janus focus <id>        - focus application by task id\n");
+		terminal_write("  janus scribe <file>     - open scribe as Janus app\n");
+		terminal_write("  janus sigil <file.rune> - open sigildraw as Janus app\n");
 		terminal_write("  spawn hb0               - spawn heartbeat type 0\n");
 		terminal_write("  spawn hb1               - spawn heartbeat type 1\n");
 		terminal_write("  summon <file.glm>       - load and run golem binary\n");
@@ -439,6 +455,32 @@ static void shell_execute_command(const char* buf, int from_script, int depth) {
       		} else {
       			terminal_write("Usage: kill <id>\n");
       		}
+
+		} else if (streq(buf, "janus")) {
+			janus_print_tasks();
+
+		} else if (streq(buf, "janus next")) {
+			janus_focus_next();
+			terminal_write("Focus shifted.\n");
+
+		} else if (starts_with(buf, "janus focus ")) {
+			uint32_t id;
+			if (parse_u32(buf + 12, &id)) {
+				janus_focus_task((int)id);
+				terminal_write("Focus changed.\n");
+			} else {
+				terminal_write("Usage: janus focus <id>\n");
+			}
+
+		} else if (starts_with(buf, "janus scribe ")) {
+			int id = janus_spawn_scribe(buf + 13);
+			if (id >= 0) terminal_write("Scribe opened through Janus. Press Alt+F1 to switch focus.\n");
+			else terminal_write("Could not open Scribe.\n");
+
+		} else if (starts_with(buf, "janus sigil ")) {
+			int id = janus_spawn_sigildraw(buf + 12);
+			if (id >= 0) terminal_write("Sigildraw opened through Janus. Press Alt+F1 to switch focus.\n");
+			else terminal_write("Could not open Sigildraw.\n");
       	} else if (starts_with(buf, "summon ")) {
 		if (!glm_load_and_run(buf + 7)) {
 			terminal_write("Summon failed.\n");
@@ -639,12 +681,37 @@ static void shell_execute_command(const char* buf, int from_script, int depth) {
 }
 
 void task_shell(void) {
+	janus_register_current("shell", JANUS_KIND_SHELL);
+
+	if (!g_shell_welcome_printed) {
+		terminal_write("--- IsnaOS ---\n");
+		terminal_write("Welcome to the land of Myrkthrima!\n");
+		terminal_write("use 'help' for a list of commands.\n--------------\n\n");
+		g_shell_welcome_printed = 1;
+		janus_consume_focus_event();
+	}
+
 	for (;;) {
+		if (!janus_current_has_focus()) {
+			yield();
+			continue;
+		}
+
+		if (janus_consume_focus_event()) {
+			terminal_clear_text_area();
+		}
+
 		prompt();
 		
 		char* buf = read_line();
-		
+
 		if (!buf) {
+			if (g_shell_restart_prompt) {
+				g_shell_restart_prompt = 0;
+				yield();
+				continue;
+			}
+
 			terminal_write("Out of memory.\n");
 			yield();
 			continue;
@@ -657,4 +724,3 @@ void task_shell(void) {
 		yield();
 	}
 }
-

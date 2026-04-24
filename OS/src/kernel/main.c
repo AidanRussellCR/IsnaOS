@@ -2,6 +2,7 @@
 #include "drivers/vga.h"
 #include "kernel/task.h"
 #include "kernel/sched.h"
+#include "kernel/janus.h"
 #include "kernel/shell.h"
 #include "ui/overlays.h"
 #include "mm/heap.h"
@@ -9,9 +10,6 @@
 
 void kmain(void) {
 	terminal_init();
-	terminal_write("--- IsnaOS ---\n");
-	terminal_write("Welcome to the land of Myrkthrima!\n");
-	terminal_write("use 'help' for a list of commands.\n--------------\n\n");
 
 	vga_cursor_hide();
 	vga_cursor_enable();
@@ -32,6 +30,7 @@ void kmain(void) {
 	}
 
 	task_init();
+	janus_init();
 
 	task_create(task_wraith, "wraith");
 	task_create(task_shell, "shell");

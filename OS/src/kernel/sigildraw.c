@@ -1,6 +1,7 @@
 #include <stddef.h>
 #include <stdint.h>
 #include "kernel/sigildraw.h"
+#include "kernel/janus.h"
 #include "ui/rune.h"
 #include "ui/glyphforge.h"
 #include "drivers/vga.h"
@@ -153,7 +154,13 @@ void sigildraw_open(const char* filename) {
 
     for (;;) {
         key_event_t ev;
-        if (!keyboard_try_get_key(&ev)) {
+
+        if (janus_consume_focus_event()) {
+            sigildraw_render(&ed);
+            continue;
+        }
+
+        if (!janus_try_get_key(&ev)) {
             yield();
             continue;
         }
