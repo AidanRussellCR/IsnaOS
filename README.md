@@ -93,6 +93,7 @@ I'd like to think it represents the slippery slope of beginning this project to 
 
 ### Compiler
 - Build a compiler that targets Shape
+- Set up basis to port existing compilers on top of Shape
 
 ### Graphics
 - Expand bitmap support
