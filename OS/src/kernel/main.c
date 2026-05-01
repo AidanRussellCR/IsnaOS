@@ -37,6 +37,8 @@ void kmain(void) {
 	//task_create(task_heartbeat0, "heartbeat0");
 	//task_create(task_heartbeat1, "heartbeat1");
 
+	overlays_redraw();
+
 	__asm__ volatile("cli");
 	schedule();
 

@@ -28,3 +28,5 @@ int janus_consume_focus_event(void);
 
 void janus_print_tasks(void);
 void janus_close_current(void);
+
+void janus_draw_tab_bar(void);

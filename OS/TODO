@@ -1,0 +1,84 @@
+======================
+Add Documentation for:
+======================
+
+inc/
+    arsc/i386/
+        ctx_switch.h    ✓
+        ports.h         ✓
+    drivers/
+        ata.h
+        keyboard.h
+        vga.h
+    fs/
+        vfs.h
+    kernel/
+        glm.h
+        glyph.h
+        janus.h
+        sched.h         ✓
+        scribe.h
+        shape.h
+        shell.h
+        sigildraw.h
+        task.h          ✓
+    lib/
+        str.h
+    mm/
+        heap.h          ✓
+    ui/
+        glpyhforge.h
+        overlays.h
+        rune.h
+
+src/
+    arsc/i386/
+        ctx_switch.asm
+    drivers/
+        ata.c
+        keyboard.c
+        vga.c
+    fs/
+        vfs.c
+    kernel/
+        glm.c
+        glyph.c
+        janus.c
+        main.c
+        sched.c
+        scribe.c
+        shape.c
+        shell.c
+        sigildraw.c
+        task.c
+    lib/
+        str.c
+    mm/
+        heap.c
+    ui/
+        glpyhforge.c
+        overlays.c
+        rune.c
+
+
+======================
+What needs to be done:
+======================
+- Inline Header Documentation
+- Inline Source Documentation
+- Design Documentation
+
+
+=========================
+Current Progress in docs:
+=========================
+
+docs/
+    arsc/i386/
+        ctx_switch
+        ports
+    kernel/
+        sched
+        task
+    mm/
+        heap

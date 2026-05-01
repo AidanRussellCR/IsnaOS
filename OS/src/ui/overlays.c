@@ -6,6 +6,7 @@
 
 #include "kernel/task.h"
 #include "kernel/sched.h"
+#include "kernel/janus.h"
 
 #define MAX_TRACK 64	// same as max tasks
 #define MAX_SHOW  10	// number of tasks to display at a time
@@ -71,42 +72,26 @@ void overlays_redraw(void) {
 }
 
 void overlays_hb_tick(int hb_kind, int task_id, uint32_t counter) {
-	if (hb_kind < 0 || hb_kind > 1) return;
-	if (task_id < 0 || task_id >= MAX_TRACK) return;
-
-	g_hb_active[hb_kind][task_id] = 1;
-	g_hb_count[hb_kind][task_id] = counter;
-
-	// redraw rows when changes occur
-	redraw_line(0, OVERLAY_ROW0);
-	redraw_line(1, OVERLAY_ROW1);
+	(void)hb_kind;
+	(void)task_id;
+	(void)counter;
+	janus_draw_tab_bar();
 }
 
 void overlays_hb_remove(int task_id) {
-	if (task_id < 0 || task_id >= MAX_TRACK) return;
-
-	g_hb_active[0][task_id] = 0;
-	g_hb_active[1][task_id] = 0;
-	g_hb_count[0][task_id] = 0;
-	g_hb_count[1][task_id] = 0;
-
-	redraw_line(0, OVERLAY_ROW0);
-	redraw_line(1, OVERLAY_ROW1);
+	(void)task_id;
+	janus_draw_tab_bar();
 }
 
 void task_heartbeat0(void) {
-	uint32_t n = 0;
 	for (;;) {
-		overlays_hb_tick(0, task_current_id(), n++);
-		task_delay(800000);
+		yield();
 	}
 }
 
 void task_heartbeat1(void) {
-	uint32_t n = 0;
 	for (;;) {
-		overlays_hb_tick(1, task_current_id(), n++);
-		task_delay(1100000);
+		yield();
 	}
 }
 

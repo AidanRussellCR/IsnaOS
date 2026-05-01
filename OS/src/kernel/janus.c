@@ -8,6 +8,7 @@
 #include "drivers/keyboard.h"
 #include "drivers/vga.h"
 #include "lib/str.h"
+#include "ui/overlays.h"
 
 typedef struct {
     int active;
@@ -51,6 +52,7 @@ void janus_register_current(const char* name, janus_kind_t kind) {
 
     if (g_focused_task < 0 && kind != JANUS_KIND_SYSTEM) {
         g_focused_task = id;
+        janus_draw_tab_bar();
     }
 }
 
@@ -65,11 +67,13 @@ void janus_forget_task(int task_id) {
     if (g_focused_task == task_id) {
         g_focused_task = -1;
         janus_focus_next();
+        janus_draw_tab_bar();
     }
 }
 
 static void janus_mark_focus_changed(void) {
     g_focus_generation++;
+    janus_draw_tab_bar();
 }
 
 void janus_focus_task(int task_id) {
@@ -80,6 +84,7 @@ void janus_focus_task(int task_id) {
     if (g_focused_task != task_id) {
         g_focused_task = task_id;
         g_focus_generation++;
+        janus_draw_tab_bar();
     }
 }
 
@@ -101,6 +106,7 @@ void janus_focus_next(void) {
         if (g_focused_task != idx) {
             g_focused_task = idx;
             g_focus_generation++;
+            janus_draw_tab_bar();
         }
         return;
     }
@@ -183,6 +189,8 @@ int janus_spawn_scribe(const char* filename) {
 
     janus_focus_task(id);
     janus_mark_focus_changed();
+    janus_draw_tab_bar();
+
     return id;
 }
 
@@ -198,6 +206,8 @@ int janus_spawn_sigildraw(const char* filename) {
 
     janus_focus_task(id);
     janus_mark_focus_changed();
+    janus_draw_tab_bar();
+
     return id;
 }
 
@@ -278,4 +288,73 @@ void janus_print_tasks(void) {
 
         terminal_putc('\n');
     }
+}
+
+static void janus_write_at(size_t row, size_t* col, const char* s) {
+    while (s && *s && *col < VGA_WIDTH) {
+        terminal_putc_at(row, (*col)++, *s++);
+    }
+}
+
+static void janus_clear_overlay_row(size_t row) {
+    for (size_t c = 0; c < VGA_WIDTH; c++) {
+        terminal_putentry_at(row, c, ' ', 0x07);
+    }
+}
+
+static const char* janus_kind_label(janus_kind_t kind) {
+    switch (kind) {
+        case JANUS_KIND_SHELL: return "shell";
+        case JANUS_KIND_APP: return "app";
+        case JANUS_KIND_SYSTEM: return "sys";
+        default: return "?";
+    }
+}
+
+void janus_draw_tab_bar(void) {
+    size_t row = OVERLAY_ROW0;
+    size_t col = 0;
+
+    janus_clear_overlay_row(OVERLAY_ROW0);
+    janus_clear_overlay_row(OVERLAY_ROW1);
+
+    janus_write_at(row, &col, "Janus ");
+
+    for (int i = 0; i < MAX_TASKS; i++) {
+        if (!g_janus[i].active) continue;
+        if (!task_at(i)) continue;
+        if (g_janus[i].kind == JANUS_KIND_SYSTEM) continue;
+
+        if (col + 4 >= VGA_WIDTH) break;
+
+        uint8_t color = (i == g_focused_task) ? 0x1F : 0x70;
+
+        terminal_putentry_at(row, col++, '[', color);
+
+        if (i == g_focused_task && col < VGA_WIDTH) {
+            terminal_putentry_at(row, col++, '*', color);
+        }
+
+        const char* name = g_janus[i].name[0] ? g_janus[i].name : janus_kind_label(g_janus[i].kind);
+
+        for (size_t n = 0; name[n] && col < VGA_WIDTH; n++) {
+            terminal_putentry_at(row, col++, name[n], color);
+        }
+
+        if (g_janus[i].arg[0]) {
+            if (col < VGA_WIDTH) terminal_putentry_at(row, col++, ':', color);
+
+            for (size_t n = 0; g_janus[i].arg[n] && col < VGA_WIDTH; n++) {
+                if (n >= 12) break;
+                terminal_putentry_at(row, col++, g_janus[i].arg[n], color);
+            }
+        }
+
+        if (col < VGA_WIDTH) terminal_putentry_at(row, col++, ']', color);
+        if (col < VGA_WIDTH) terminal_putentry_at(row, col++, ' ', 0x07);
+    }
+
+    row = OVERLAY_ROW1;
+    col = 0;
+    janus_write_at(row, &col, "Alt+F1 next  |  janus = list  |  janus focus <id>");
 }
