@@ -7,19 +7,19 @@ inc/
         ctx_switch.h    ✓
         ports.h         ✓
     drivers/
-        ata.h
-        keyboard.h
-        vga.h
+        ata.h           ✓
+        keyboard.h      ✓
+        vga.h           ✓
     fs/
-        vfs.h
+        vfs.h           ✓
     kernel/
-        glm.h
+        glm.h           ✓
         glyph.h
         janus.h
         sched.h         ✓
         scribe.h
         shape.h
-        shell.h
+        shell.h         ✓
         sigildraw.h
         task.h          ✓
     lib/
@@ -33,28 +33,28 @@ inc/
 
 src/
     arsc/i386/
-        ctx_switch.asm
+        ctx_switch.asm  ✓
     drivers/
-        ata.c
-        keyboard.c
-        vga.c
+        ata.c           ✓
+        keyboard.c      ✓
+        vga.c           ✓
     fs/
-        vfs.c
+        vfs.c           ✓
     kernel/
-        glm.c
+        glm.c           ✓
         glyph.c
         janus.c
-        main.c
-        sched.c
+        main.c          ✓
+        sched.c         ✓
         scribe.c
         shape.c
-        shell.c
+        shell.c         ✓
         sigildraw.c
-        task.c
+        task.c          ✓
     lib/
         str.c
     mm/
-        heap.c
+        heap.c          ✓
     ui/
         glpyhforge.c
         overlays.c
@@ -77,6 +77,10 @@ docs/
     arsc/i386/
         ctx_switch
         ports
+    drivers/
+        ata
+        keyboard
+        vga
     kernel/
         sched
         task
