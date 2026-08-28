@@ -23,6 +23,13 @@ task_t* task_at(int id) {
 
 int task_current_id(void) { return g_current; }
 
+task_t* task_current(void) {
+    if (g_current < 0 || g_current >= MAX_TASKS)
+        return 0;
+
+    return g_tasks[g_current];
+}
+
 static int alloc_slot(void) {
     for (int i = 0; i < MAX_TASKS; i++) {
         if (g_tasks[i] == 0) return i;
@@ -55,6 +62,10 @@ static void build_initial_context(task_t* t) {
 }
 
 int task_create(void (*entry)(void), const char* name) {
+    return task_create_ex(entry, name, TASK_KIND_KERNEL, 0, 0, TASK_FLAG_AUTOREAP);
+}
+
+int task_create_ex(void (*entry)(void), const char* name, task_kind_t kind, void* userdata, task_cleanup_fn cleanup, uint32_t flags) {
     int id = alloc_slot();
     if (id < 0) return -1;
 
@@ -67,12 +78,30 @@ int task_create(void (*entry)(void), const char* name) {
         return -1;
     }
 
-    t->entry = entry;
-    t->name = name;
+    t->esp = 0;
     t->state = TASK_READY;
+
+    t->id = id;
+    t->kind = kind;
+
+    kstrncpy0(
+        t->name,
+        name ? name : "task",
+        sizeof(t->name)
+    );
+
+    t->entry = entry;
+
     t->kstack_base = stack;
     t->kstack_size = KSTACK_SIZE;
-    t->esp = 0;
+
+    t->parent_id = g_current;
+    t->exit_code = 0;
+
+    t->flags = flags;
+
+    t->userdata = userdata;
+    t->cleanup = cleanup;
 
     build_initial_context(t);
 
@@ -88,32 +117,95 @@ static void cleanup_task_slot(int id) {
     overlays_hb_remove(id);
     janus_forget_task(id);
 
+    if (t->cleanup) {
+        t->cleanup(t->userdata);
+    }
+
     kfree(t->kstack_base);
     kfree(t);
+
     g_tasks[id] = 0;
 }
 
 int task_kill(int id) {
-    if (id < 0 || id >= MAX_TASKS) return 0;
+    if (id < 0 || id >= MAX_TASKS)
+        return 0;
+
     task_t* t = g_tasks[id];
-    if (!t) return 0;
+    if (!t)
+        return 0;
 
-    // never kill current task from shell
-    if (id == g_current) return 0;
+    // Don't kill the task that is currently executing
+    if (id == g_current)
+        return 0;
 
-    // cannot kill shell or wraith tasks
-    if (t->name && (streq(t->name, "shell") || streq(t->name, "wraith"))) return 0;
+    // Protect kernel tasks
+    if (streq(t->name, "shell") ||
+        streq(t->name, "wraith")) {
+        return 0;
+        }
 
+        t->exit_code = TASK_EXIT_KILLED;
     t->state = TASK_ZOMBIE;
+
     return 1;
 }
 
-void task_exit(void) {
-    int id = g_current;
-    if (id >= 0 && id < MAX_TASKS && g_tasks[id]) {
-        g_tasks[id]->state = TASK_ZOMBIE;
+void task_exit_code(int code) {
+    task_t* t = task_current();
+
+    if (t) {
+        t->exit_code = code;
+        t->state = TASK_ZOMBIE;
     }
-    for (;;) yield();
+
+    for (;;) {
+        yield();
+    }
+}
+
+void task_exit(void) {
+    task_exit_code(0);
+}
+
+int task_wait(int id, int* out_exit_code) {
+    int parent_id = task_current_id();
+
+    if (id < 0 || id >= MAX_TASKS)
+        return 0;
+
+    if (id == parent_id)
+        return 0;
+
+    task_t* child = task_at(id);
+
+    if (!child)
+        return 0;
+
+    if (child->parent_id != parent_id)
+        return 0;
+
+    for (;;) {
+        child = task_at(id);
+
+        if (!child)
+            return 0;
+
+        if (child->parent_id != parent_id)
+            return 0;
+
+        if (child->state == TASK_ZOMBIE) {
+            if (out_exit_code) {
+                *out_exit_code = child->exit_code;
+            }
+
+            cleanup_task_slot(id);
+
+            return 1;
+        }
+
+        yield();
+    }
 }
 
 static void task_trampoline(void) {
@@ -128,6 +220,7 @@ char task_state_char(task_state_t s) {
         case TASK_READY:   return 'R';
         case TASK_RUNNING: return '*';
         case TASK_BLOCKED: return 'B';
+        case TASK_ZOMBIE:  return 'Z';
         case TASK_DEAD:    return 'D';
         default: return '?';
     }
@@ -193,6 +286,18 @@ void task_wraith(void) {
             // don't reap shell or wraith by mistake
             if (t->name && (streq(t->name, "shell") || streq(t->name, "wraith"))) {
                 t->state = TASK_READY;
+                continue;
+            }
+
+            // reaped tasks preserve original behavior
+            if (t->flags & TASK_FLAG_AUTOREAP) {
+                cleanup_task_slot(i);
+                continue;
+            }
+
+            // if parent process exists let the zombie get collected by task_wait()
+            if (t->parent_id >= 0 &&
+                task_at(t->parent_id) != 0) {
                 continue;
             }
 

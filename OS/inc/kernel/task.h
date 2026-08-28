@@ -1,6 +1,15 @@
 #pragma once
 #include <stdint.h>
 
+// Cap right now for tracked tasks
+#define MAX_TASKS 64
+#define TASK_NAME_MAX 48
+
+#define TASK_FLAG_NONE 0u
+#define TASK_FLAG_AUTOREAP (1u << 0)
+
+#define TASK_EXIT_KILLED (-1)
+
 /*
  * enum task_state_t - lifecycle states for kernel tasks
  * @TASK_DEAD: unused or dead task
@@ -18,25 +27,53 @@ typedef enum {
 } task_state_t;
 
 /*
+ * enum task_kind_t - identifier for task types
+ * @TASK_KIND_KERNEL: kernel task
+ * @TASK_KIND_GLM: golem task
+ */
+typedef enum {
+    TASK_KIND_KERNEL = 0,
+    TASK_KIND_GLM
+} task_kind_t;
+
+typedef void (*task_cleanup_fn)(void* userdata);
+
+/*
  * struct task_t - kernel task control block
  * @esp: saved stack pointer for context switching
  * @state: current task lifecycle state
+ * @id: process ID
  * @name: task name (human-readable)
  * @entry: task entry function
  * @kstack_base: allocated kernel stack base
  * @kstack_size: size of allocated kernel stack
+ * @parent_id: process ID of parent process
+ * @exit_code: exit status of task
+ * @userdata: data for user glm processes
+ * @cleanup: dead process cleanup
  */
 typedef struct task {
     uint32_t esp;
     task_state_t state;
-    const char* name;
+
+    int id;
+    task_kind_t kind;
+
+    char name[TASK_NAME_MAX];
+
     void (*entry)(void);
+
     void* kstack_base;
     uint32_t kstack_size;
-} task_t;
 
-// Cap right now for tracked tasks
-#define MAX_TASKS 64
+    int parent_id;
+    int exit_code;
+
+    uint32_t flags;
+
+    void* userdata;
+    task_cleanup_fn cleanup;
+} task_t;
 
 /*
  * task_init - initialize the task table
@@ -51,6 +88,17 @@ void task_init(void);
  * Return: task id on success, -1 on failure
  */
 int task_create(void (*entry)(void), const char* name);
+
+/*
+ * task_create_ex - create a new kernel task
+ * @entry: function the task should execute
+ * @name: display/debug name for the task
+ * @kind: kernel or golem task
+ * @userdata: data for glm process
+ *
+ * Return: task id on success, -1 on failure
+ */
+int task_create_ex(void (*entry)(void), const char* name, task_kind_t kind, void* userdata, task_cleanup_fn cleanup, uint32_t flags);
 
 /*
  * task_kill - mark a task for cleanup
@@ -68,6 +116,13 @@ int task_kill(int id);
 int task_current_id(void);
 
 /*
+ * task_current - get the currently running task id
+ *
+ * Return: current task id, 0 if no task is active
+ */
+task_t* task_current(void);
+
+/*
  * task_at - look up a task by id
  * @id: task id
  *
@@ -83,11 +138,26 @@ task_t* task_at(int id);
 void task_wraith(void);
 
 /*
+ * task_exit_code - terminate current task with explicit status
+ *
+ * Marks the current task as a zombie and yields indefinitely until reaped.
+ */
+void task_exit_code(int code) __attribute__((noreturn));
+
+/*
  * task_exit - terminate the current task
  *
  * Marks the current task as a zombie and yields indefinitely until reaped.
  */
 void task_exit(void) __attribute__((noreturn));
+
+/*
+ * task_wait - wait for a child task to exit
+ *
+ * Returns 1 on success
+ * Returns 0 if the task does not exist or is not the child
+ */
+int task_wait(int id, int* out_exit_code);
 
 /*
  * task_delay - cooperative busy delay

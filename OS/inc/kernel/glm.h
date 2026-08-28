@@ -65,9 +65,9 @@ typedef struct {
 typedef int (*glm_entry_t)(const glm_host_api_t* api, uint8_t* image_base);
 
 /**
- * glm_load_and_run - load and execute a GLM binary
+ * glm_load_and_run - load a GLM binary and create a scheduled task
  * @filename: golem executable filename
  *
- * Return: nonzero on success
+ * Return: task id on success, -1 on failure
  */
-int glm_load_and_run(const char* filename);
+int glm_spawn(const char* filename);

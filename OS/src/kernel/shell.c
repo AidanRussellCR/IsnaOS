@@ -423,7 +423,7 @@ static void shell_execute_command(const char* buf, int from_script, int depth) {
         terminal_write("  janus sigil <file.rune> - open sigildraw as Janus app\n");
         terminal_write("  spawn hb0               - spawn heartbeat type 0\n");
         terminal_write("  spawn hb1               - spawn heartbeat type 1\n");
-        terminal_write("  summon <file.glm>       - load and run golem binary\n");
+        terminal_write("  summon <file.glm>       - summon golem process\n");
         terminal_write("  shape <in.asm> <out>    - assemble source into out.glm\n");
         terminal_write("  glyph <file.rune>       - view rune bitmap\n");
         terminal_write("  sigildraw <file.rune>   - edit rune bitmap\n");
@@ -481,24 +481,38 @@ static void shell_execute_command(const char* buf, int from_script, int depth) {
             int id = janus_spawn_sigildraw(buf + 12);
             if (id >= 0) terminal_write("Sigildraw opened through Janus. Press Alt+F1 to switch focus.\n");
             else terminal_write("Could not open Sigildraw.\n");
-          } else if (starts_with(buf, "summon ")) {
-        if (!glm_load_and_run(buf + 7)) {
-            terminal_write("Summon failed.\n");
-        }
-          } else if (streq(buf, "spawn hb0")) {
-              int id = task_create(task_heartbeat0, "heartbeat0");
-              if (id >= 0) terminal_write("Spawned hb0.\n");
-              else terminal_write("No free task slots.\n");
-          } else if (streq(buf, "spawn hb1")) {
-              int id = task_create(task_heartbeat1, "heartbeat1");
-              if (id >= 0) terminal_write("Spawned hb1.\n");
-              else terminal_write("No free task slots.\n");
-          } else if (streq(buf, "yield")) {
-              terminal_write("(yield)\n");
-              yield();
-          } else if (streq(buf, "shop")) {
-              terminal_write("In this directory:\n");
-              vfs_shop(shop_print_cb, 0);
+        } else if (starts_with(buf, "summon ")) {
+            int id = glm_spawn(buf + 7);
+
+            if (id < 0) {
+                terminal_write("Summon failed.\n");
+            } else {
+                terminal_write("Summoning golem...\n");
+
+                int exit_code = 0;
+
+                if (!task_wait(id, &exit_code)) {
+                    terminal_write(
+                        "Could not wait for golem.\n"
+                    );
+                } else {
+                    terminal_write("\nGolem returned.\n");
+                }
+            }
+        } else if (streq(buf, "spawn hb0")) {
+            int id = task_create(task_heartbeat0, "heartbeat0");
+            if (id >= 0) terminal_write("Spawned hb0.\n");
+            else terminal_write("No free task slots.\n");
+        } else if (streq(buf, "spawn hb1")) {
+            int id = task_create(task_heartbeat1, "heartbeat1");
+            if (id >= 0) terminal_write("Spawned hb1.\n");
+            else terminal_write("No free task slots.\n");
+        } else if (streq(buf, "yield")) {
+            terminal_write("(yield)\n");
+             yield();
+        } else if (streq(buf, "shop")) {
+            terminal_write("In this directory:\n");
+            vfs_shop(shop_print_cb, 0);
     } else if (streq(buf, "grimoire")) {
         terminal_write("Learned spells:\n");
         vfs_grimoire(grimoire_print_cb, 0);
