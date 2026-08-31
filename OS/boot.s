@@ -12,6 +12,10 @@ global _start
 extern kmain
 
 _start:
+	cli
+
+	cld
+
 	; Set up stack
 	mov esp, stack_top
 

@@ -1,4 +1,6 @@
 #include <stdint.h>
+#include "arsc/i386/gdt.h"
+#include "arsc/i386/trap.h"
 #include "drivers/vga.h"
 #include "kernel/task.h"
 #include "kernel/sched.h"
@@ -9,11 +11,20 @@
 #include "fs/vfs.h"
 
 void kmain(void) {
+    gdt_init();
+
     terminal_init();
+    trap_init();
 
     vga_cursor_hide();
     vga_cursor_enable();
     vga_cursor_set_pos(terminal_get_row(), terminal_get_col());
+
+    terminal_write("Testing CPU trap frame...\n");
+
+    __asm__ volatile ("int3");
+
+    terminal_write("Breakpoint returned successfully.\n");
 
     terminal_write("Kernel starting tasks...\n");
 
