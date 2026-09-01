@@ -10,7 +10,9 @@
 #include "mm/heap.h"
 #include "fs/vfs.h"
 
-void kmain(void) {
+void kmain(uint32_t multiboot_magic, uint32_t multiboot_info) {
+    (void)multiboot_magic;
+    (void)multiboot_info;
     gdt_init();
 
     terminal_init();
