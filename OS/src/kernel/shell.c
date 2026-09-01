@@ -424,6 +424,7 @@ static void shell_execute_command(const char* buf, int from_script, int depth) {
         terminal_write("  spawn hb0               - spawn heartbeat type 0\n");
         terminal_write("  spawn hb1               - spawn heartbeat type 1\n");
         terminal_write("  summon <file.glm>       - summon golem process\n");
+        terminal_write("  strace <file.glm>       - trace golem API calls\n");
         terminal_write("  shape <in.asm> <out>    - assemble source into out.glm\n");
         terminal_write("  glyph <file.rune>       - view rune bitmap\n");
         terminal_write("  sigildraw <file.rune>   - edit rune bitmap\n");
@@ -497,6 +498,38 @@ static void shell_execute_command(const char* buf, int from_script, int depth) {
                     );
                 } else {
                     terminal_write("\nGolem returned.\n");
+                }
+            }
+        } else if (starts_with(buf, "strace ")) {
+            int id = glm_spawn_ex(
+                buf + 7,
+                GLM_SPAWN_TRACE_API
+            );
+
+            if (id < 0) {
+                terminal_write(
+                    "Strace failed.\n"
+                );
+            } else {
+                terminal_write(
+                    "Tracing golem as task "
+                );
+
+                terminal_write("...\n");
+
+                int exit_code = 0;
+
+                if (!task_wait(
+                    id,
+                    &exit_code
+                )) {
+                    terminal_write(
+                        "Could not wait for golem.\n"
+                    );
+                } else {
+                    terminal_write(
+                        "\nTrace complete.\n"
+                    );
                 }
             }
         } else if (streq(buf, "spawn hb0")) {

@@ -11,6 +11,9 @@
 
 #define GLM_FLAG_NONE 0u
 
+#define GLM_SPAWN_NONE 0u
+#define GLM_SPAWN_TRACE_API (1u << 0)
+
 /**
  * struct glm_header_t - GLM executable image header
  * @magic: GLM file magic
@@ -63,6 +66,15 @@ typedef struct {
  * glm_entry_t - golem executable entry function type
  */
 typedef int (*glm_entry_t)(const glm_host_api_t* api, uint8_t* image_base);
+
+/**
+ * glm_spawn_ex - load a GLM binary and create a scheduled task
+ * @filename: golem executable filename
+ * @flags: runtime spawn flags
+ *
+ * Return: task id on success, -1 on failure
+ */
+int glm_spawn_ex(const char* filename, uint32_t flags);
 
 /**
  * glm_load_and_run - load a GLM binary and create a scheduled task

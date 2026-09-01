@@ -20,6 +20,8 @@ typedef struct {
 
     uint32_t entry_offset;
 
+    uint32_t spawn_flags;
+
     glm_host_api_t api;
 
     char filename[TASK_NAME_MAX];
@@ -48,6 +50,124 @@ static void glm_runtime_destroy(void* userdata) {
     }
 
     kfree(rt);
+}
+
+static void glm_write_u32(uint32_t value) {
+    char buf[16];
+    int p = 0;
+
+    if (value == 0) {
+        terminal_putc('0');
+        return;
+    }
+
+    while (value > 0 && p < (int)sizeof(buf)) {
+        buf[p++] =
+            (char)('0' + (value % 10));
+
+        value /= 10;
+    }
+
+    while (p > 0) {
+        terminal_putc(buf[--p]);
+    }
+}
+
+static void glm_write_int(int value) {
+    uint32_t magnitude;
+
+    if (value < 0) {
+        terminal_putc('-');
+
+        magnitude =
+            0u - (uint32_t)value;
+    } else {
+        magnitude =
+            (uint32_t)value;
+    }
+
+    glm_write_u32(magnitude);
+}
+
+static void glm_write_hex32(uint32_t value) {
+    static const char digits[] =
+        "0123456789ABCDEF";
+
+    terminal_write("0x");
+
+    for (int shift = 28;
+         shift >= 0;
+         shift -= 4) {
+        terminal_putc(
+            digits[(value >> shift) & 0x0F]
+        );
+    }
+}
+
+static void glm_trace_write_string(const char* s, size_t max_bytes) {
+    if (!s) {
+        terminal_write("NULL");
+        return;
+    }
+
+    terminal_putc('"');
+
+    size_t i = 0;
+
+    while (i < max_bytes && s[i]) {
+        char c = s[i++];
+
+        switch (c) {
+            case '\n':
+                terminal_write("\\n");
+                break;
+
+            case '\r':
+                terminal_write("\\r");
+                break;
+
+            case '\t':
+                terminal_write("\\t");
+                break;
+
+            case '\\':
+                terminal_write("\\\\");
+                break;
+
+            case '"':
+                terminal_write("\\\"");
+                break;
+
+            default:
+                if ((unsigned char)c >= 32 &&
+                    (unsigned char)c <= 126) {
+                    terminal_putc(c);
+                } else {
+                    terminal_putc('?');
+                }
+                break;
+        }
+    }
+
+    if (i == max_bytes) {
+        terminal_write("...");
+    }
+
+    terminal_putc('"');
+}
+
+static void glm_trace_prefix(void) {
+    terminal_write("[strace ");
+
+    int id = task_current_id();
+
+    if (id < 0) {
+        terminal_putc('?');
+    } else {
+        glm_write_u32((uint32_t)id);
+    }
+
+    terminal_write("] ");
 }
 
 // GLM host API
@@ -108,27 +228,108 @@ static int glm_api_getch(void) {
 }
 
 static void glm_api_print_num(int value) {
-    char buf[16];
-    int neg = 0;
-    int p = 0;
+    glm_write_int(value);
+}
 
-    if (value == 0) {
-        terminal_write("0");
-        return;
+static void glm_trace_print(const char* s) {
+    glm_trace_prefix();
+
+    terminal_write("print(");
+
+    glm_trace_write_string(
+        s,
+        64
+    );
+
+    terminal_write(")\n");
+
+    glm_api_print(s);
+}
+
+static void glm_trace_yield(void) {
+    glm_trace_prefix();
+    terminal_write("yield()\n");
+
+    glm_api_yield();
+}
+
+static void glm_trace_print_off(uint32_t off) {
+    glm_trace_prefix();
+
+    terminal_write("print_off(");
+    glm_write_hex32(off);
+
+    glm_runtime_t* rt =
+        glm_current_runtime();
+
+    if (rt &&
+        rt->image &&
+        off < rt->image_size) {
+
+        terminal_write(", ");
+
+        size_t remaining =
+            rt->image_size - off;
+
+        if (remaining > 64) {
+            remaining = 64;
+        }
+
+        glm_trace_write_string(
+            (const char*)(
+                rt->image + off
+            ),
+            remaining
+        );
     }
 
-    if (value < 0) {
-        neg = 1;
-        value = -value;
+    terminal_write(")\n");
+
+    glm_api_print_off(off);
+}
+
+static void glm_trace_exit(int code) {
+    glm_trace_prefix();
+
+    terminal_write("exit(");
+    glm_write_int(code);
+    terminal_write(")\n");
+
+    glm_api_exit(code);
+}
+
+static int glm_trace_getch(void) {
+    glm_trace_prefix();
+    terminal_write("getch()\n");
+
+    int result =
+        glm_api_getch();
+
+    glm_trace_prefix();
+
+    terminal_write("getch() = ");
+    glm_write_int(result);
+
+    if (result >= 32 &&
+        result <= 126) {
+        terminal_write(" ('");
+        terminal_putc((char)result);
+        terminal_write("')");
     }
 
-    while (value > 0 && p < (int)sizeof(buf)) {
-        buf[p++] = (char)('0' + (value % 10));
-        value /= 10;
-    }
+    terminal_putc('\n');
 
-    if (neg) terminal_putc('-');
-    while (p > 0) terminal_putc(buf[--p]);
+    return result;
+}
+
+static void glm_trace_print_num(int value) {
+    glm_trace_prefix();
+
+    terminal_write("print_num(");
+    glm_write_int(value);
+    terminal_write(")\n");
+
+    glm_api_print_num(value);
 }
 
 static int glm_validate(const glm_header_t* h, size_t file_size) {
@@ -178,7 +379,7 @@ static void glm_task_main(void) {
     task_exit_code(0);
 }
 
-int glm_spawn(const char* filename) {
+int glm_spawn_ex(const char* filename, uint32_t flags) {
     const uint8_t* file_data = 0;
     size_t file_size = 0;
 
@@ -231,6 +432,7 @@ int glm_spawn(const char* filename) {
     rt->image = 0;
     rt->image_size = image_size;
     rt->entry_offset = h->entry_offset;
+    rt->spawn_flags = flags;
 
     kstrncpy0(
         rt->filename,
@@ -269,12 +471,22 @@ int glm_spawn(const char* filename) {
 
     // Initialize golem API table
     rt->api.api_version = GLM_API_VERSION;
-    rt->api.print       = glm_api_print;
-    rt->api.yield       = glm_api_yield;
-    rt->api.print_off   = glm_api_print_off;
-    rt->api.exit        = glm_api_exit;
-    rt->api.getch       = glm_api_getch;
-    rt->api.print_num   = glm_api_print_num;
+
+    if (flags & GLM_SPAWN_TRACE_API) {
+        rt->api.print       = glm_trace_print;
+        rt->api.yield       = glm_trace_yield;
+        rt->api.print_off   = glm_trace_print_off;
+        rt->api.exit        = glm_trace_exit;
+        rt->api.getch       = glm_trace_getch;
+        rt->api.print_num   = glm_trace_print_num;
+    } else {
+        rt->api.print       = glm_api_print;
+        rt->api.yield       = glm_api_yield;
+        rt->api.print_off   = glm_api_print_off;
+        rt->api.exit        = glm_api_exit;
+        rt->api.getch       = glm_api_getch;
+        rt->api.print_num   = glm_api_print_num;
+    }
 
     // Create scheduled golem task
     int id = task_create_ex(
@@ -297,4 +509,8 @@ int glm_spawn(const char* filename) {
     }
 
     return id;
+}
+
+int glm_spawn(const char* filename) {
+    return glm_spawn_ex(filename, GLM_SPAWN_NONE);
 }
