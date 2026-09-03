@@ -2,6 +2,7 @@
 #include "arsc/i386/gdt.h"
 #include "arsc/i386/trap.h"
 #include "drivers/vga.h"
+#include "drivers/framebuffer.h"
 #include "kernel/task.h"
 #include "kernel/sched.h"
 #include "kernel/janus.h"
@@ -11,8 +12,7 @@
 #include "fs/vfs.h"
 
 void kmain(uint32_t multiboot_magic, uint32_t multiboot_info) {
-    (void)multiboot_magic;
-    (void)multiboot_info;
+    framebuffer_init(multiboot_magic, multiboot_info);
     gdt_init();
 
     terminal_init();
