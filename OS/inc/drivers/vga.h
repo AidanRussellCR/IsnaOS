@@ -95,3 +95,7 @@ void terminal_set_cursor_pos(size_t row, size_t col);
 void vga_cursor_enable(void);
 void vga_cursor_hide(void);
 void vga_cursor_set_pos(size_t row, size_t col);
+
+/* Read-only snapshot of the CLI TTY for pixel-based renderers */
+uint16_t terminal_visible_cell(size_t row, size_t col);
+uint32_t terminal_generation(void);
