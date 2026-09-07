@@ -7,6 +7,7 @@
 #include "kernel/sigildraw.h"
 #include "drivers/keyboard.h"
 #include "drivers/vga.h"
+#include "drivers/framebuffer.h"
 #include "lib/str.h"
 #include "ui/overlays.h"
 
@@ -20,6 +21,11 @@ typedef struct {
 
 static janus_slot_t g_janus[MAX_TASKS];
 static int g_focused_task = -1;
+static int g_cli_focus = -1;
+static int g_desktop_task = -1;
+static int g_gui_focus = -1;
+static int g_active_vt = 2;
+static uint32_t g_vt_generation = 1;
 
 static uint32_t g_focus_generation = 1;
 static uint32_t g_seen_focus_generation[MAX_TASKS];
@@ -38,6 +44,11 @@ void janus_init(void) {
         g_seen_focus_generation[i] = 0;
     }
     g_focused_task = -1;
+    g_cli_focus = -1;
+    g_desktop_task = -1;
+    g_gui_focus = -1;
+    g_active_vt = 2;
+    g_vt_generation = 1;
     g_focus_generation = 1;
 }
 
@@ -50,7 +61,12 @@ void janus_register_current(const char* name, janus_kind_t kind) {
     g_janus[id].kind = kind;
     janus_copy(g_janus[id].name, sizeof(g_janus[id].name), name ? name : "task");
 
-    if (g_focused_task < 0 && kind != JANUS_KIND_SYSTEM) {
+    if (kind == JANUS_KIND_SHELL && g_cli_focus < 0) g_cli_focus = id;
+    if (kind == JANUS_KIND_DESKTOP) {
+        g_desktop_task = id;
+        g_gui_focus = id;
+    }
+    if (g_focused_task < 0 && kind != JANUS_KIND_SYSTEM && kind != JANUS_KIND_DESKTOP) {
         g_focused_task = id;
         janus_draw_tab_bar();
     }
@@ -64,6 +80,14 @@ void janus_forget_task(int task_id) {
     g_janus[task_id].name[0] = '\0';
     g_janus[task_id].arg[0] = '\0';
 
+    if (g_cli_focus == task_id) g_cli_focus = -1;
+    if (g_gui_focus == task_id) g_gui_focus = g_desktop_task;
+    if (g_desktop_task == task_id) {
+        g_desktop_task = -1;
+        g_gui_focus = -1;
+        g_active_vt = 2;
+    }
+
     if (g_focused_task == task_id) {
         g_focused_task = -1;
         janus_focus_next();
@@ -76,10 +100,37 @@ static void janus_mark_focus_changed(void) {
     janus_draw_tab_bar();
 }
 
+int janus_active_vt(void) { return g_active_vt; }
+
+uint32_t janus_vt_generation(void) { return g_vt_generation; }
+
+int janus_cli_task(void) { return g_cli_focus; }
+
+void janus_switch_vt(int vt) {
+    if (vt != 1 && vt != 2) return;
+    if (vt == 1 && (!framebuffer_available() || g_desktop_task < 0)) return;
+    if (g_active_vt == vt) return;
+
+    g_active_vt = vt;
+    g_focused_task = vt == 1 ? g_gui_focus : g_cli_focus;
+    g_vt_generation++;
+    janus_draw_tab_bar();
+}
+
 void janus_focus_task(int task_id) {
     if (task_id < 0 || task_id >= MAX_TASKS) return;
-    if (!g_janus[task_id].active) return;
-    if (g_janus[task_id].kind == JANUS_KIND_SYSTEM) return;
+    if (!g_janus[task_id].active || g_janus[task_id].kind == JANUS_KIND_SYSTEM) return;
+    if (g_active_vt == 1) {
+        // terminal can direct input to the shell while VT1 remains visible
+        // not a shell TTY reset
+        if (g_janus[task_id].kind != JANUS_KIND_DESKTOP && g_janus[task_id].kind != JANUS_KIND_SHELL) return;
+        g_gui_focus = task_id;
+        g_focused_task = task_id;
+        g_vt_generation++;
+        return;
+    }
+    if (g_janus[task_id].kind == JANUS_KIND_DESKTOP) return;
+    g_cli_focus = task_id;
 
     if (g_focused_task != task_id) {
         g_focused_task = task_id;
@@ -93,6 +144,11 @@ int janus_focused_task(void) {
 }
 
 void janus_focus_next(void) {
+    if (g_active_vt == 1) {
+        janus_focus_task(g_focused_task == g_desktop_task ? janus_cli_task() : g_desktop_task);
+        return;
+    }
+
     int start = g_focused_task;
     if (start < 0) start = task_current_id();
     if (start < 0) start = 0;
@@ -100,11 +156,12 @@ void janus_focus_next(void) {
     for (int step = 1; step <= MAX_TASKS; step++) {
         int idx = (start + step) % MAX_TASKS;
         if (!g_janus[idx].active) continue;
-        if (g_janus[idx].kind == JANUS_KIND_SYSTEM) continue;
+        if (g_janus[idx].kind == JANUS_KIND_SYSTEM || g_janus[idx].kind == JANUS_KIND_DESKTOP) continue;
         if (!task_at(idx)) continue;
 
         if (g_focused_task != idx) {
             g_focused_task = idx;
+            g_cli_focus = idx;
             g_focus_generation++;
             janus_draw_tab_bar();
         }
@@ -120,6 +177,16 @@ int janus_try_get_key(key_event_t* ev) {
     }
 
     if (!keyboard_try_get_key(ev)) {
+        return 0;
+    }
+
+    if (ev->type == KEY_CTRL_ALT_F1) {
+        janus_switch_vt(1);
+        return 0;
+    }
+
+    if (ev->type == KEY_CTRL_ALT_F2) {
+        janus_switch_vt(2);
         return 0;
     }
 
@@ -187,6 +254,7 @@ int janus_spawn_scribe(const char* filename) {
     janus_copy(g_janus[id].name, sizeof(g_janus[id].name), "scribe");
     janus_copy(g_janus[id].arg, sizeof(g_janus[id].arg), filename ? filename : "untitled.txt");
 
+    janus_switch_vt(2);
     janus_focus_task(id);
     janus_mark_focus_changed();
     janus_draw_tab_bar();
@@ -204,6 +272,7 @@ int janus_spawn_sigildraw(const char* filename) {
     janus_copy(g_janus[id].name, sizeof(g_janus[id].name), "sigildraw");
     janus_copy(g_janus[id].arg, sizeof(g_janus[id].arg), filename ? filename : "icon.rune");
 
+    janus_switch_vt(2);
     janus_focus_task(id);
     janus_mark_focus_changed();
     janus_draw_tab_bar();
@@ -275,6 +344,7 @@ void janus_print_tasks(void) {
         if (g_janus[i].kind == JANUS_KIND_SHELL) type = "shell";
         else if (g_janus[i].kind == JANUS_KIND_APP) type = "app";
         else if (g_janus[i].kind == JANUS_KIND_SYSTEM) type = "system";
+        else if (g_janus[i].kind == JANUS_KIND_DESKTOP) type = "desktop";
 
         print_padded(type, 8);
 
@@ -307,6 +377,7 @@ static const char* janus_kind_label(janus_kind_t kind) {
         case JANUS_KIND_SHELL: return "shell";
         case JANUS_KIND_APP: return "app";
         case JANUS_KIND_SYSTEM: return "sys";
+        case JANUS_KIND_DESKTOP: return "desktop";
         default: return "?";
     }
 }
@@ -323,7 +394,7 @@ void janus_draw_tab_bar(void) {
     for (int i = 0; i < MAX_TASKS; i++) {
         if (!g_janus[i].active) continue;
         if (!task_at(i)) continue;
-        if (g_janus[i].kind == JANUS_KIND_SYSTEM) continue;
+        if (g_janus[i].kind == JANUS_KIND_SYSTEM || g_janus[i].kind == JANUS_KIND_DESKTOP) continue;
 
         if (col + 4 >= VGA_WIDTH) break;
 
@@ -356,5 +427,5 @@ void janus_draw_tab_bar(void) {
 
     row = OVERLAY_ROW1;
     col = 0;
-    janus_write_at(row, &col, "Alt+F1 next  |  janus = list  |  janus focus <id>");
+    janus_write_at(row, &col, framebuffer_available() ? "Ctrl+Alt+F1 desktop | Ctrl+Alt+F2 CLI | Alt+F1 next" : "Alt+F1 next  |  janus = list  |  janus focus <id>");
 }

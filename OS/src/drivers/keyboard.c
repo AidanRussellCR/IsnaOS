@@ -26,6 +26,7 @@ static const char scancode_to_ascii_shift[128] = {
 
 static int shift_down = 0;
 static int alt_down = 0;
+static int ctrl_down = 0;
 
 int keyboard_try_get_key(key_event_t* ev) {
     static int e0 = 0;
@@ -44,9 +45,15 @@ int keyboard_try_get_key(key_event_t* ev) {
         return 0;
     }
 
-    // Alt
-    if (!e0 && code == 0x38) {
+    // Ctrl (including the extended right Ctrl key) and Alt
+    if (code == 0x1D) {
+        ctrl_down = released ? 0 : 1;
+        e0 = 0;
+        return 0;
+    }
+    if (code == 0x38) {
         alt_down = released ? 0 : 1;
+        e0 = 0;
         return 0;
     }
 
@@ -66,8 +73,8 @@ int keyboard_try_get_key(key_event_t* ev) {
         }
     } else {
         switch (code) {
-            case 0x3B: ev->type = alt_down ? KEY_ALT_F1 : KEY_F1; return 1;
-            case 0x3C: ev->type = alt_down ? KEY_ALT_F2 : KEY_F2; return 1;
+            case 0x3B: ev->type = ctrl_down && alt_down ? KEY_CTRL_ALT_F1 : alt_down ? KEY_ALT_F1 : KEY_F1; return 1;
+            case 0x3C: ev->type = ctrl_down && alt_down ? KEY_CTRL_ALT_F2 : alt_down ? KEY_ALT_F2 : KEY_F2; return 1;
             case 0x3D: ev->type = alt_down ? KEY_ALT_F3 : KEY_F3; return 1;
             case 0x3E: ev->type = alt_down ? KEY_ALT_F4 : KEY_F4; return 1;
             default: break;
