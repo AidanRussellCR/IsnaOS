@@ -6,6 +6,8 @@
 #include "arsc/i386/pic.h"
 
 #include "drivers/vga.h"
+#include "drivers/framebuffer.h"
+#include "ui/gfx.h"
 
 _Static_assert(
     offsetof(trap_frame_t, gs) == 0,
@@ -127,6 +129,34 @@ static void trap_halt(void) {
     }
 }
 
+static void trap_fb_hex(int x, int y, const char* label, uint32_t value) {
+    static const char hex[] = "0123456789ABCDEF";
+    char text[11];
+    text[0] = '0'; text[1] = 'x';
+
+    for (int i = 0; i < 8; i++)
+        text[2 + i] = hex[(value >> (28 - 4 * i)) & 0xFu];
+
+    text[10] = '\0';
+    gfx_text(x, y, label, 0xFFFFFFu, 0x4C1523u);
+    gfx_text(x + 96, y, text, 0xFFF1B0u, 0x4C1523u);
+}
+
+static void trap_fb_panic(const trap_frame_t* frame) {
+    const framebuffer_t* fb = framebuffer_info();
+    if (!fb) return;
+    gfx_clip_reset();
+    gfx_rect(0, 0, (int)fb->width, (int)fb->height, 0x4C1523u);
+    gfx_text(16, 16, "ISNAOS KERNEL TRAP", 0xFFFFFFu, 0x4C1523u);
+
+    if (frame->vector < 32)
+        gfx_text(16, 48, g_exception_names[frame->vector], 0xFFD0D0u, 0x4C1523u);
+
+    trap_fb_hex(16, 80, "Vector:", frame->vector);
+    trap_fb_hex(16, 100, "Error:", frame->error_code);
+    trap_fb_hex(16, 120, "EIP:", frame->eip);
+}
+
 static void trap_fatal(
     trap_frame_t* frame
 ) {
@@ -204,6 +234,7 @@ static void trap_fatal(
         "\n\nSystem halted.\n"
     );
 
+    trap_fb_panic(frame);
     trap_halt();
 }
 

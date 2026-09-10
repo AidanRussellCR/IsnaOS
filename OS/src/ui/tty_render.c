@@ -70,5 +70,5 @@ void tty_render_fullscreen(void) {
     }
 
     gfx_rect(0, height - 20, width, 20, 0x17283A);
-    gfx_text(16, height - 18, "Ctrl+Alt+F1 Desktop    Ctrl+Alt+F2 CLI", 0xCDDBE8, 0x17283A);
+    gfx_text(16, height - 18, "Ctrl+Shift+F7 Desktop    Ctrl+Shift+F8 CLI", 0xCDDBE8, 0x17283A);
 }

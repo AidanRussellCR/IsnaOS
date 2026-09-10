@@ -29,8 +29,9 @@ typedef enum {
     KEY_ALT_F2,
     KEY_ALT_F3,
     KEY_ALT_F4,
-    KEY_CTRL_ALT_F1,
-    KEY_CTRL_ALT_F2
+    KEY_CTRL_SHIFT_F7,
+    KEY_CTRL_SHIFT_F8,
+    KEY_CTRL_SHIFT_F9
 } key_type_t;
 
 /**

@@ -72,9 +72,18 @@ int keyboard_try_get_key(key_event_t* ev) {
             default: return 0;
         }
     } else {
+        // Ctrl+Shift+F7/8/9 for Desktop, CLI, and next Janus app
+        if (ctrl_down && shift_down && !alt_down) {
+            switch (code) {
+                case 0x41: ev->type = KEY_CTRL_SHIFT_F7; return 1;
+                case 0x42: ev->type = KEY_CTRL_SHIFT_F8; return 1;
+                case 0x43: ev->type = KEY_CTRL_SHIFT_F9; return 1;
+                default: break;
+            }
+        }
         switch (code) {
-            case 0x3B: ev->type = ctrl_down && alt_down ? KEY_CTRL_ALT_F1 : alt_down ? KEY_ALT_F1 : KEY_F1; return 1;
-            case 0x3C: ev->type = ctrl_down && alt_down ? KEY_CTRL_ALT_F2 : alt_down ? KEY_ALT_F2 : KEY_F2; return 1;
+            case 0x3B: ev->type = alt_down ? KEY_ALT_F1 : KEY_F1; return 1;
+            case 0x3C: ev->type = alt_down ? KEY_ALT_F2 : KEY_F2; return 1;
             case 0x3D: ev->type = alt_down ? KEY_ALT_F3 : KEY_F3; return 1;
             case 0x3E: ev->type = alt_down ? KEY_ALT_F4 : KEY_F4; return 1;
             default: break;

@@ -180,17 +180,17 @@ int janus_try_get_key(key_event_t* ev) {
         return 0;
     }
 
-    if (ev->type == KEY_CTRL_ALT_F1) {
+    if (ev->type == KEY_CTRL_SHIFT_F7) {
         janus_switch_vt(1);
         return 0;
     }
 
-    if (ev->type == KEY_CTRL_ALT_F2) {
+    if (ev->type == KEY_CTRL_SHIFT_F8) {
         janus_switch_vt(2);
         return 0;
     }
 
-    if (ev->type == KEY_ALT_F1) {
+    if (ev->type == KEY_CTRL_SHIFT_F9) {
         janus_focus_next();
         return 0;
     }
@@ -427,5 +427,5 @@ void janus_draw_tab_bar(void) {
 
     row = OVERLAY_ROW1;
     col = 0;
-    janus_write_at(row, &col, framebuffer_available() ? "Ctrl+Alt+F1 desktop | Ctrl+Alt+F2 CLI | Alt+F1 next" : "Alt+F1 next  |  janus = list  |  janus focus <id>");
+    janus_write_at(row, &col, framebuffer_available() ? "Ctrl+Shift+F7 desktop | Ctrl+Shift+F8 CLI | Ctrl+Shift+F9 next" : "Ctrl+Shift+F9 next  |  janus = list  |  janus focus <id>");
 }

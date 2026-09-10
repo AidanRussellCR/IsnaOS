@@ -8,6 +8,7 @@
 #include "kernel/janus.h"
 #include "kernel/shell.h"
 #include "ui/overlays.h"
+#include "ui/desktop.h"
 #include "mm/heap.h"
 #include "fs/vfs.h"
 
@@ -21,12 +22,6 @@ void kmain(uint32_t multiboot_magic, uint32_t multiboot_info) {
     vga_cursor_hide();
     vga_cursor_enable();
     vga_cursor_set_pos(terminal_get_row(), terminal_get_col());
-
-    terminal_write("Testing CPU trap frame...\n");
-
-    __asm__ volatile ("int3");
-
-    terminal_write("Breakpoint returned successfully.\n");
 
     terminal_write("Kernel starting tasks...\n");
 
@@ -47,6 +42,7 @@ void kmain(uint32_t multiboot_magic, uint32_t multiboot_info) {
 
     task_create(task_wraith, "wraith");
     task_create(task_shell, "shell");
+    if (framebuffer_available()) task_create(task_desktop, "desktop");
     //task_create(task_heartbeat0, "heartbeat0");
     //task_create(task_heartbeat1, "heartbeat1");
 
