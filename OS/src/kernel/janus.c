@@ -10,6 +10,7 @@
 #include "drivers/framebuffer.h"
 #include "lib/str.h"
 #include "ui/overlays.h"
+#include "ui/desktop.h"
 
 typedef struct {
     int active;
@@ -189,6 +190,8 @@ int janus_try_get_key(key_event_t* ev) {
         janus_switch_vt(2);
         return 0;
     }
+
+    if (g_active_vt == 1 && desktop_handle_global_key(ev)) return 0;
 
     if (ev->type == KEY_CTRL_SHIFT_F9) {
         janus_focus_next();

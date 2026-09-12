@@ -8,6 +8,9 @@
 #include "drivers/keyboard.h"
 #include "kernel/janus.h"
 #include "kernel/sched.h"
+#include "kernel/task.h"
+
+static int g_desktop_task = -1;
 
 static void desktop_draw(void) {
     const framebuffer_t* fb = framebuffer_info();
@@ -25,11 +28,31 @@ static void desktop_draw(void) {
     gfx_rect(0, h - 36, w, 36, 0x14283B);
     gfx_rect(12, h - 30, 98, 24, 0x416986);
     gfx_text(28, h - 26, "IsnaOS", 0xFFFFFF, 0x416986);
+    gfx_text(130, h - 26, "F3 Terminal   F4 Files", 0xDFE8F3, 0x14283B);
     gfx_text(w - 170, h - 26, "VT1  DESKTOP", 0xD1DCE7, 0x14283B);
+}
+
+int desktop_handle_global_key(const key_event_t* ev) {
+    if (!ev || janus_active_vt() != 1) return 0;
+
+    if (ev->type == KEY_F3 || ev->type == KEY_ALT_F3) {
+        wm_focus(WM_WINDOW_TERMINAL);
+        janus_focus_task(janus_cli_task());
+        return 1;
+    }
+
+    if (ev->type == KEY_F4 || ev->type == KEY_ALT_F4) {
+        wm_focus(WM_WINDOW_FILES);
+        janus_focus_task(g_desktop_task);
+        return 1;
+    }
+
+    return 0;
 }
 
 void task_desktop(void) {
     wm_init();
+    g_desktop_task = task_current_id();
     janus_register_current("desktop", JANUS_KIND_DESKTOP);
     janus_switch_vt(1);
     uint32_t seen_terminal = 0;
@@ -44,7 +67,17 @@ void task_desktop(void) {
         if (janus_active_vt() == 1) {
             if (janus_current_has_focus()) {
                 key_event_t ev;
-                (void)janus_try_get_key(&ev);
+                if (janus_try_get_key(&ev)) {
+                    switch (ev.type) {
+                        case KEY_LEFT: wm_move_active(-12, 0); break;
+                        case KEY_RIGHT: wm_move_active(12, 0); break;
+                        case KEY_UP: wm_move_active(0, -12); break;
+                        case KEY_DOWN: wm_move_active(0, 12); break;
+                        case KEY_PAGEUP: wm_resize_active(24, 24); break;
+                        case KEY_PAGEDOWN: wm_resize_active(-24, -24); break;
+                        default: break;
+                    }
+                }
             }
             if (current_vt != seen_vt || current_terminal != seen_terminal || current_wm != seen_wm) desktop_draw();
         } else if (current_vt != seen_vt || current_terminal != seen_terminal) {
