@@ -2,6 +2,7 @@
 #include "ui/desktop.h"
 #include "ui/gfx.h"
 #include "ui/wm.h"
+#include "ui/files_ui.h"
 #include "ui/tty_render.h"
 #include "drivers/framebuffer.h"
 #include "drivers/vga.h"
@@ -58,17 +59,21 @@ void task_desktop(void) {
     uint32_t seen_terminal = 0;
     uint32_t seen_vt = 0;
     uint32_t seen_wm = 0;
+    uint32_t seen_files = 0;
 
     for (;;) {
         uint32_t current_vt = janus_vt_generation();
         uint32_t current_terminal = terminal_generation();
         uint32_t current_wm = wm_generation();
+        uint32_t current_files = files_ui_generation();
 
         if (janus_active_vt() == 1) {
             if (janus_current_has_focus()) {
                 key_event_t ev;
                 if (janus_try_get_key(&ev)) {
-                    switch (ev.type) {
+                    if (wm_active() == WM_WINDOW_FILES && files_ui_key(&ev)) {
+                        /* Arrow and Enter keys navigate VFS browser */
+                    } else switch (ev.type) {
                         case KEY_LEFT: wm_move_active(-12, 0); break;
                         case KEY_RIGHT: wm_move_active(12, 0); break;
                         case KEY_UP: wm_move_active(0, -12); break;
@@ -79,7 +84,7 @@ void task_desktop(void) {
                     }
                 }
             }
-            if (current_vt != seen_vt || current_terminal != seen_terminal || current_wm != seen_wm) desktop_draw();
+            if (current_vt != seen_vt || current_terminal != seen_terminal || current_wm != seen_wm || current_files != seen_files) desktop_draw();
         } else if (current_vt != seen_vt || current_terminal != seen_terminal) {
             tty_render_fullscreen();
         }
@@ -87,6 +92,7 @@ void task_desktop(void) {
         seen_vt = current_vt;
         seen_terminal = current_terminal;
         seen_wm = current_wm;
+        seen_files = current_files;
         yield();
     }
 }

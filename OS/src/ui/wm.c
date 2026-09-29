@@ -2,6 +2,7 @@
 #include "ui/wm.h"
 #include "ui/gfx.h"
 #include "ui/tty_render.h"
+#include "ui/files_ui.h"
 #include "drivers/framebuffer.h"
 
 #define WM_HEADER_HEIGHT 24
@@ -27,6 +28,7 @@ void wm_init(void) {
     };
 
     active = WM_WINDOW_TERMINAL;
+    files_ui_init();
     generation++;
 }
 
@@ -88,8 +90,7 @@ static void wm_draw_window(const wm_window_t* win, int focused) {
     if (win->kind == WM_WINDOW_TERMINAL) {
         tty_render_region(x + 9, y + WM_HEADER_HEIGHT + 8, w - 18, h - WM_HEADER_HEIGHT - 16);
     } else {
-        gfx_text(x + 12, y + WM_HEADER_HEIGHT + 16, "Current directory", 0xC8D9E9, 0x172636);
-        gfx_text(x + 12, y + WM_HEADER_HEIGHT + 48, "File browser loading...", 0x9DB7CE, 0x172636);
+        files_ui_draw(x + 12, y + WM_HEADER_HEIGHT + 12, w - 24, h - WM_HEADER_HEIGHT - 22);
     }
 
     gfx_clip_reset();
