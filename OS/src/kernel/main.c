@@ -3,6 +3,7 @@
 #include "arsc/i386/trap.h"
 #include "drivers/vga.h"
 #include "drivers/framebuffer.h"
+#include "drivers/mouse.h"
 #include "kernel/task.h"
 #include "kernel/sched.h"
 #include "kernel/janus.h"
@@ -24,6 +25,11 @@ void kmain(uint32_t multiboot_magic, uint32_t multiboot_info) {
     vga_cursor_set_pos(terminal_get_row(), terminal_get_col());
 
     terminal_write("Kernel starting tasks...\n");
+
+    if (framebuffer_available()) {
+        const framebuffer_t* fb = framebuffer_info();
+        mouse_init((int)fb->width, (int)fb->height);
+    }
 
     heap_init();
     vfs_init();

@@ -1,6 +1,7 @@
 #include <stdint.h>
 #include "arsc/i386/ports.h"
 #include "drivers/keyboard.h"
+#include "drivers/mouse.h"
 
 static const char scancode_to_ascii[128] = {
     0, 27, '1','2','3','4','5','6','7','8','9','0','-','=','\b',
@@ -31,8 +32,14 @@ static int ctrl_down = 0;
 int keyboard_try_get_key(key_event_t* ev) {
     static int e0 = 0;
 
-    if ((inb(0x64) & 0x01) == 0) return 0;
+    uint8_t status = inb(0x64);
+    if (!(status & 0x01)) return 0;
     uint8_t sc = inb(0x60);
+
+    if (status & 0x20) {
+        mouse_consume_byte(sc);
+        return 0;
+    }
 
     if (sc == 0xE0) { e0 = 1; return 0; }
 
