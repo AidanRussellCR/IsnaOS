@@ -7,6 +7,7 @@
 #include "drivers/framebuffer.h"
 #include "drivers/vga.h"
 #include "drivers/keyboard.h"
+#include "drivers/mouse.h"
 #include "kernel/janus.h"
 #include "kernel/sched.h"
 #include "kernel/task.h"
@@ -31,6 +32,14 @@ static void desktop_draw(void) {
     gfx_text(28, h - 26, "IsnaOS", 0xFFFFFF, 0x416986);
     gfx_text(130, h - 26, "F3 Terminal   F4 Files", 0xDFE8F3, 0x14283B);
     gfx_text(w - 170, h - 26, "VT1  DESKTOP", 0xD1DCE7, 0x14283B);
+
+    if (mouse_enabled()) {
+        mouse_state_t ms = mouse_state();
+        gfx_rect(ms.x, ms.y, 13, 2, 0x101A23);
+        gfx_rect(ms.x, ms.y, 2, 16, 0x101A23);
+        gfx_rect(ms.x + 1, ms.y + 1, 10, 1, 0xFFFFFF);
+        gfx_rect(ms.x + 1, ms.y + 1, 1, 13, 0xFFFFFF);
+    }
 }
 
 int desktop_handle_global_key(const key_event_t* ev) {
@@ -60,12 +69,14 @@ void task_desktop(void) {
     uint32_t seen_vt = 0;
     uint32_t seen_wm = 0;
     uint32_t seen_files = 0;
+    uint32_t seen_mouse = 0;
 
     for (;;) {
         uint32_t current_vt = janus_vt_generation();
         uint32_t current_terminal = terminal_generation();
         uint32_t current_wm = wm_generation();
         uint32_t current_files = files_ui_generation();
+        mouse_state_t ms = mouse_state();
 
         if (janus_active_vt() == 1) {
             if (janus_current_has_focus()) {
@@ -84,7 +95,14 @@ void task_desktop(void) {
                     }
                 }
             }
-            if (current_vt != seen_vt || current_terminal != seen_terminal || current_wm != seen_wm || current_files != seen_files) desktop_draw();
+
+            if (ms.generation != seen_mouse) {
+                int target = wm_mouse_input(ms.x, ms.y, ms.buttons);
+                if (target == WM_WINDOW_TERMINAL) janus_focus_task(janus_cli_task());
+                else if (target >= WM_WINDOW_FILES) janus_focus_task(g_desktop_task);
+            }
+
+            if (current_vt != seen_vt || current_terminal != seen_terminal || current_wm != seen_wm || current_files != seen_files || ms.generation != seen_mouse) desktop_draw();
         } else if (current_vt != seen_vt || current_terminal != seen_terminal) {
             tty_render_fullscreen();
         }
@@ -93,6 +111,7 @@ void task_desktop(void) {
         seen_terminal = current_terminal;
         seen_wm = current_wm;
         seen_files = current_files;
+        seen_mouse = ms.generation;
         yield();
     }
 }

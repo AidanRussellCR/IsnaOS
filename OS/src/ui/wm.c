@@ -11,6 +11,7 @@
 static wm_window_t windows[WM_WINDOW_COUNT];
 static wm_window_kind_t active = WM_WINDOW_TERMINAL;
 static uint32_t generation = 1;
+static int dragging, mouse_down, mouse_x, mouse_y;
 
 void wm_init(void) {
     const framebuffer_t* fb = framebuffer_info();
@@ -28,6 +29,7 @@ void wm_init(void) {
     };
 
     active = WM_WINDOW_TERMINAL;
+    dragging = mouse_down = 0;
     files_ui_init();
     generation++;
 }
@@ -100,4 +102,43 @@ void wm_draw(void) {
     wm_window_kind_t back = active == WM_WINDOW_TERMINAL ? WM_WINDOW_FILES : WM_WINDOW_TERMINAL;
     wm_draw_window(&windows[back], 0);
     wm_draw_window(&windows[active], 1);
+}
+
+int wm_mouse_input(int x, int y, uint8_t buttons) {
+    int pressed = (buttons & 1u) != 0;
+
+    if (!pressed) {
+        mouse_down = 0;
+        dragging = 0;
+        return -1;
+    }
+
+    if (mouse_down) {
+        if (dragging) wm_move_active(x - mouse_x, y - mouse_y);
+        mouse_x = x;
+        mouse_y = y;
+        return -1;
+    }
+
+    mouse_down = 1;
+    mouse_x = x;
+    mouse_y = y;
+    int back = active == WM_WINDOW_TERMINAL ? WM_WINDOW_FILES : WM_WINDOW_TERMINAL;
+    int order[2] = { (int)active, back };
+
+    for (int i = 0; i < 2; i++) {
+        wm_window_t* win = &windows[order[i]];
+        if (!win->visible) continue;
+        if (x < win->x || x >= win->x + win->width || y < win->y || y >= win->y + win->height) continue;
+        wm_focus(win->kind);
+        if (y < win->y + WM_HEADER_HEIGHT + 3) {
+            dragging = 1;
+        } else if (win->kind == WM_WINDOW_FILES) {
+            int list_top = win->y + WM_HEADER_HEIGHT + 12 + 48;
+            if (y >= list_top) files_ui_select_at((y - list_top) / 20);
+        }
+        return (int)win->kind;
+    }
+
+    return WM_WINDOW_COUNT;
 }
