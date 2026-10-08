@@ -1,8 +1,9 @@
-CC := /bin/i686-elf-gcc
-LD := /bin/i686-elf-ld
+CROSS ?= i686-elf-
+CC := $(CROSS)gcc
+LD := $(CROSS)ld
 AS := nasm
 
-CFLAGS := -std=c11 -ffreestanding -O2 -Wall -Wextra -m32 -Iinc
+CFLAGS := -std=c11 -ffreestanding -fno-pic -fno-pie -fno-stack-protector -O2 -Wall -Wextra -m32 -Iinc
 LDFLAGS := -T linker.ld -nostdlib
 
 ISO_DIR := isodir
@@ -35,7 +36,7 @@ $(ISO): $(KERNEL) grub.cfg
 	grub-mkrescue -o $(ISO) $(ISO_DIR) >/dev/null
 
 run: $(ISO)
-	qemu-system-i386 -cdrom $(ISO)
+	qemu-system-i386 -m 128M -vga std -cdrom $(ISO)
 
 clean:
 	rm -rf $(ISO_DIR) boot.o $(KERNEL) $(ISO) $(shell find src -name '*.o')

@@ -28,7 +28,7 @@ void wm_init(void) {
         w / 2 - 50, h / 3, 340, 256, 1, WM_WINDOW_FILES, "Files"
     };
 
-    active = WM_WINDOW_TERMINAL;
+    active = WM_WINDOW_FILES;
     dragging = mouse_down = 0;
     files_ui_init();
     generation++;
@@ -57,8 +57,12 @@ void wm_move_active(int dx, int dy) {
     win->y += dy;
     if (win->x < 0) win->x = 0;
     if (win->y < 32) win->y = 32;
-    if (win->x + 48 > (int)fb->width) win->x = (int)fb->width - 48;
-    if (win->y + 32 > (int)fb->height - 36) win->y = (int)fb->height - 68;
+    if (win->x + win->width > (int)fb->width)
+        win->x = (int)fb->width - win->width;
+    if (win->y + win->height > (int)fb->height - 36)
+        win->y = (int)fb->height - 36 - win->height;
+    if (win->x < 0) win->x = 0;
+    if (win->y < 32) win->y = 32;
     generation++;
 }
 
@@ -72,6 +76,7 @@ void wm_resize_active(int dw, int dh) {
     int nexth = win->height + dh;
     if (nextw < 240) nextw = 240;
     if (nexth < 120) nexth = 120;
+    if (maxw < 240 || maxh < 120) return;
     if (nextw > maxw) nextw = maxw;
     if (nexth > maxh) nexth = maxh;
     win->width = nextw;
