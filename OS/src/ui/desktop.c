@@ -20,6 +20,7 @@ static void desktop_draw(void) {
     int w = (int)fb->width;
     int h = (int)fb->height;
 
+    gfx_begin_frame();
     gfx_clip_reset();
     gfx_rect(0, 0, w, h, 0x294965);
     gfx_rect(0, 0, w, 32, 0x1A3147);
@@ -40,6 +41,8 @@ static void desktop_draw(void) {
         gfx_rect(ms.x + 1, ms.y + 1, 10, 1, 0xFFFFFF);
         gfx_rect(ms.x + 1, ms.y + 1, 1, 13, 0xFFFFFF);
     }
+
+    gfx_end_frame();
 }
 
 int desktop_handle_global_key(const key_event_t* ev) {
@@ -104,7 +107,9 @@ void task_desktop(void) {
 
             if (current_vt != seen_vt || current_terminal != seen_terminal || current_wm != seen_wm || current_files != seen_files || ms.generation != seen_mouse) desktop_draw();
         } else if (current_vt != seen_vt || current_terminal != seen_terminal) {
+            gfx_begin_frame();
             tty_render_fullscreen();
+            gfx_end_frame();
         }
 
         seen_vt = current_vt;

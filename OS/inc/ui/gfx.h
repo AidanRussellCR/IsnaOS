@@ -5,6 +5,13 @@
 #define GFX_GLYPH_WIDTH 8
 #define GFX_GLYPH_HEIGHT 16
 
+/*
+ * Draw into offscreen RAM when the resolution fits the fixed buffer
+ * fallback to the direct framebuffer renderer
+ */
+void gfx_begin_frame(void);
+void gfx_end_frame(void);
+
 void gfx_clip_reset(void);
 void gfx_clip_set(int x, int y, int w, int h);
 void gfx_pixel(int x, int y, uint32_t rgb);
