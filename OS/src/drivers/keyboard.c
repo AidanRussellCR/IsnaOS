@@ -1,6 +1,7 @@
 #include <stdint.h>
 #include "arsc/i386/ports.h"
 #include "drivers/keyboard.h"
+#include "drivers/mouse.h"
 
 static const char scancode_to_ascii[128] = {
     0, 27, '1','2','3','4','5','6','7','8','9','0','-','=','\b',
@@ -26,12 +27,19 @@ static const char scancode_to_ascii_shift[128] = {
 
 static int shift_down = 0;
 static int alt_down = 0;
+static int ctrl_down = 0;
 
 int keyboard_try_get_key(key_event_t* ev) {
     static int e0 = 0;
 
-    if ((inb(0x64) & 0x01) == 0) return 0;
+    uint8_t status = inb(0x64);
+    if (!(status & 0x01)) return 0;
     uint8_t sc = inb(0x60);
+
+    if (status & 0x20) {
+        mouse_consume_byte(sc);
+        return 0;
+    }
 
     if (sc == 0xE0) { e0 = 1; return 0; }
 
@@ -44,9 +52,15 @@ int keyboard_try_get_key(key_event_t* ev) {
         return 0;
     }
 
-    // Alt
-    if (!e0 && code == 0x38) {
+    // Ctrl (including the extended right Ctrl key) and Alt
+    if (code == 0x1D) {
+        ctrl_down = released ? 0 : 1;
+        e0 = 0;
+        return 0;
+    }
+    if (code == 0x38) {
         alt_down = released ? 0 : 1;
+        e0 = 0;
         return 0;
     }
 
@@ -65,6 +79,15 @@ int keyboard_try_get_key(key_event_t* ev) {
             default: return 0;
         }
     } else {
+        // Ctrl+Shift+F7/8/9 for Desktop, CLI, and next Janus app
+        if (ctrl_down && shift_down && !alt_down) {
+            switch (code) {
+                case 0x41: ev->type = KEY_CTRL_SHIFT_F7; return 1;
+                case 0x42: ev->type = KEY_CTRL_SHIFT_F8; return 1;
+                case 0x43: ev->type = KEY_CTRL_SHIFT_F9; return 1;
+                default: break;
+            }
+        }
         switch (code) {
             case 0x3B: ev->type = alt_down ? KEY_ALT_F1 : KEY_F1; return 1;
             case 0x3C: ev->type = alt_down ? KEY_ALT_F2 : KEY_F2; return 1;

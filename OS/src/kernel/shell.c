@@ -475,12 +475,12 @@ static void shell_execute_command(const char* buf, int from_script, int depth) {
 
         } else if (starts_with(buf, "janus scribe ")) {
             int id = janus_spawn_scribe(buf + 13);
-            if (id >= 0) terminal_write("Scribe opened through Janus. Press Alt+F1 to switch focus.\n");
+            if (id >= 0) terminal_write("Scribe opened through Janus. Press Ctrl+Shift+F9 to switch focus.\n");
             else terminal_write("Could not open Scribe.\n");
 
         } else if (starts_with(buf, "janus sigil ")) {
             int id = janus_spawn_sigildraw(buf + 12);
-            if (id >= 0) terminal_write("Sigildraw opened through Janus. Press Alt+F1 to switch focus.\n");
+            if (id >= 0) terminal_write("Sigildraw opened through Janus. Press Ctrl+Shift+F9 to switch focus.\n");
             else terminal_write("Could not open Sigildraw.\n");
         } else if (starts_with(buf, "summon ")) {
             int id = glm_spawn(buf + 7);

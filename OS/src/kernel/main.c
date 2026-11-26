@@ -2,15 +2,19 @@
 #include "arsc/i386/gdt.h"
 #include "arsc/i386/trap.h"
 #include "drivers/vga.h"
+#include "drivers/framebuffer.h"
+#include "drivers/mouse.h"
 #include "kernel/task.h"
 #include "kernel/sched.h"
 #include "kernel/janus.h"
 #include "kernel/shell.h"
 #include "ui/overlays.h"
+#include "ui/desktop.h"
 #include "mm/heap.h"
 #include "fs/vfs.h"
 
-void kmain(void) {
+void kmain(uint32_t multiboot_magic, uint32_t multiboot_info) {
+    framebuffer_init(multiboot_magic, multiboot_info);
     gdt_init();
 
     terminal_init();
@@ -20,13 +24,12 @@ void kmain(void) {
     vga_cursor_enable();
     vga_cursor_set_pos(terminal_get_row(), terminal_get_col());
 
-    terminal_write("Testing CPU trap frame...\n");
-
-    __asm__ volatile ("int3");
-
-    terminal_write("Breakpoint returned successfully.\n");
-
     terminal_write("Kernel starting tasks...\n");
+
+    if (framebuffer_available()) {
+        const framebuffer_t* fb = framebuffer_info();
+        mouse_init((int)fb->width, (int)fb->height);
+    }
 
     heap_init();
     vfs_init();
@@ -45,6 +48,7 @@ void kmain(void) {
 
     task_create(task_wraith, "wraith");
     task_create(task_shell, "shell");
+    if (framebuffer_available()) task_create(task_desktop, "desktop");
     //task_create(task_heartbeat0, "heartbeat0");
     //task_create(task_heartbeat1, "heartbeat1");
 
