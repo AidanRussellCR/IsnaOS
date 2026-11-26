@@ -9,6 +9,7 @@ LDFLAGS := -T linker.ld -nostdlib
 ISO_DIR := isodir
 KERNEL := kernel.elf
 ISO := os.iso
+VM_RAM ?= 256M
 
 C_SOURCES := $(shell find src -name '*.c')
 ASM_SOURCES := $(shell find src -name '*.asm')
@@ -36,7 +37,7 @@ $(ISO): $(KERNEL) grub.cfg
 	grub-mkrescue -o $(ISO) $(ISO_DIR) >/dev/null
 
 run: $(ISO)
-	qemu-system-i386 -m 128M -vga std -cdrom $(ISO)
+	qemu-system-i386 -m $(VM_RAM) -vga std -cdrom $(ISO)
 
 clean:
 	rm -rf $(ISO_DIR) boot.o $(KERNEL) $(ISO) $(shell find src -name '*.o')
